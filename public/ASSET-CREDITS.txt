@@ -1,0 +1,21 @@
+Third-party assets used by RPD Survival
+
+Service Pistol model
+- Source: Poly Haven, https://polyhaven.com/a/service_pistol
+- License: CC0 1.0 Universal
+
+Beretta M9 gunshot (published by SoundBible as "Barreta M9")
+- Source: SoundBible, https://soundbible.com/1906-Barreta-M9.html
+- License: Public Domain
+
+Zombie Moan
+- Creator: Mike Koenig
+- Source: SoundBible, https://soundbible.com/1035-Zombie-Moan.html
+- License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
+- The game varies playback speed, stereo position, level, and filtered reflections.
+
+Zombie Horde
+- Creator: Mike Koenig
+- Source: SoundBible, https://soundbible.com/1833-Zombie-Horde.html
+- License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
+- The game varies playback speed, stereo position, level, and filtered reflections.

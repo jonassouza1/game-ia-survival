@@ -1,0 +1,8 @@
+Asset: Covered Car
+Source: https://polyhaven.com/a/covered_car
+License: CC0 1.0 Universal
+License details: https://polyhaven.com/license
+Author credit: MP (credit is appreciated but not required)
+
+The model and textures in this folder are the 1K glTF download from Poly Haven.
+The in-game charred appearance and surrounding wreckage are original additions.
