@@ -105,7 +105,7 @@ export function buildCityStreet(group) {
   });
   const glass = new THREE.MeshLambertMaterial({ color: 0x343936, emissive: 0x080b0a, flatShading: true });
   const materials = {
-    asphalt: new THREE.MeshLambertMaterial({ map: asphalt, color: 0xb4b0a5 }),
+    asphalt: new THREE.MeshPhongMaterial({ map: asphalt, color: 0xaaa9a2, specular: 0x252a2d, shininess: 18 }),
     brick: new THREE.MeshLambertMaterial({ map: brick, color: 0xa39a84 }),
     brickSoot: new THREE.MeshLambertMaterial({ map: brick, color: 0x76746d }),
     concrete: new THREE.MeshLambertMaterial({ map: concrete, color: 0x8c8677 }),

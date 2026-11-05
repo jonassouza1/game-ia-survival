@@ -882,8 +882,9 @@ export function buildPoliceStation(scene) {
     if (nextFlash < 0) { flash = 1; nextFlash = 6 + Math.random() * 10; }
     flash = Math.max(0, flash - dt * (flash > 0.55 ? 2.4 : 1.1));
     const f = flash * (0.65 + 0.35 * Math.sin(t * 61));
-    M.glass.color.setScalar(1 + f * 5);
-    hemi.intensity = hemiBase + f * 2.4;
+    M.glass.color.setScalar(1 + f * 7.5);
+    if (M.glass.emissive) M.glass.emissive.setRGB(0.18 + f * 1.9, 0.22 + f * 2.2, 0.30 + f * 2.8);
+    hemi.intensity = hemiBase + f * 3.1;
     if (flickerLight) flickerLight.intensity = flickerLight.userData.base * (0.88 + 0.12 * Math.sin(t * 11) - (Math.random() < 0.015 ? 0.55 : 0));
   }
 

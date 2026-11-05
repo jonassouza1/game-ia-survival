@@ -2,6 +2,7 @@
 export function createAudio() {
   let ctx, master, shotBus, musicGainNode, streetMusicGainNode, started = false, stepClock = 0;
   let musicTimer, streetMusicTimer, thunderTimer, zombieTimer;
+  let rainLayerGainNode, rainDetailGainNode;
   let gunshotBuffer, zombieMoanBuffer, zombieHordeBuffer;
   const zombieVoices = new Set();
   let environment = 'hall', rainGainNode, windGainNode;
@@ -136,11 +137,11 @@ export function createAudio() {
     source.buffer = buffer;
     source.playbackRate.value = 0.92 + Math.random() * 0.16;
     filter.type = 'lowpass';
-    filter.frequency.value = 1900 + Math.random() * 1100;
+    filter.frequency.value = useHorde ? 850 + Math.random() * 650 : 1250 + Math.random() * 1250;
     filter.Q.value = 0.55;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(useHorde ? 0.34 : 0.52, now + 0.12);
-    gain.gain.setTargetAtTime(useHorde ? 0.26 : 0.4, now + 0.12, 0.35);
+    gain.gain.linearRampToValueAtTime(useHorde ? 0.19 : 0.25, now + 0.5);
+    gain.gain.setTargetAtTime(useHorde ? 0.14 : 0.19, now + 0.5, 0.8);
     gain.gain.setTargetAtTime(0.0001, now + Math.max(0.5, buffer.duration - 0.45), 0.22);
     panner.pan.value = (Math.random() * 1.7) - 0.85;
     const voice = { source, gain };
@@ -153,7 +154,7 @@ export function createAudio() {
     reflection.delayTime.value = 0.19 + Math.random() * 0.11;
     reflectionFilter.type = 'lowpass';
     reflectionFilter.frequency.value = 1050;
-    reflectionGain.gain.value = 0.14;
+    reflectionGain.gain.value = useHorde ? 0.22 : 0.12;
     panner.connect(reflection).connect(reflectionFilter).connect(reflectionGain).connect(master);
     source.onended = () => {
       source.disconnect();
@@ -173,7 +174,7 @@ export function createAudio() {
     zombieTimer = setTimeout(() => {
       if (environment === 'street') playZombieAmbience();
       scheduleZombie();
-    }, delay ?? (environment === 'street' ? 5500 + Math.random() * 8500 : 15000 + Math.random() * 12000));
+    }, delay ?? (environment === 'street' ? 2300 + Math.random() * 3300 : 15000 + Math.random() * 12000));
   }
 
   function start() {
@@ -192,8 +193,14 @@ export function createAudio() {
     // Chuva contínua abafada pelas paredes, com vento grave atravessando as janelas.
     const rain = ctx.createBufferSource(); rain.buffer = noiseBuffer(4); rain.loop = true;
     const rainBand = ctx.createBiquadFilter(); rainBand.type = 'bandpass'; rainBand.frequency.value = 1150; rainBand.Q.value = 0.42;
-    rainGainNode = ctx.createGain(); rainGainNode.gain.value = environment === 'street' ? 0.2 : 0.075;
+    rainGainNode = ctx.createGain(); rainGainNode.gain.value = environment === 'street' ? 0.28 : 0.035;
     rain.connect(rainBand).connect(rainGainNode).connect(master); rain.start();
+    // Camada de gotas finas e impacto no asfalto: dá escala de chuva aberta sem virar ruído branco.
+    const rainDetail = ctx.createBufferSource(); rainDetail.buffer = noiseBuffer(2.7); rainDetail.loop = true;
+    const rainHigh = ctx.createBiquadFilter(); rainHigh.type = 'highpass'; rainHigh.frequency.value = 2400;
+    const rainPulse = ctx.createBiquadFilter(); rainPulse.type = 'lowpass'; rainPulse.frequency.value = 7200;
+    rainDetailGainNode = ctx.createGain(); rainDetailGainNode.gain.value = environment === 'street' ? 0.105 : 0.012;
+    rainDetail.connect(rainHigh).connect(rainPulse).connect(rainDetailGainNode).connect(master); rainDetail.start();
     const wind = ctx.createBufferSource(); wind.buffer = noiseBuffer(5); wind.loop = true;
     const low = ctx.createBiquadFilter(); low.type = 'lowpass'; low.frequency.value = 310;
     windGainNode = ctx.createGain(); windGainNode.gain.value = environment === 'street' ? 0.19 : 0.10;
@@ -227,10 +234,11 @@ export function createAudio() {
         const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), amp = ctx.createGain();
         src.buffer = noiseBuffer(outdoors ? 5 : 3.5); filter.type = 'lowpass'; filter.frequency.value = outdoors ? 240 + Math.random() * 180 : 180 + Math.random() * 120;
         amp.gain.setValueAtTime(0.0001, now);
-        amp.gain.linearRampToValueAtTime(outdoors ? 0.48 : 0.07, now + (outdoors ? 0.3 : 0.18));
-        amp.gain.exponentialRampToValueAtTime(0.0001, now + (outdoors ? 4.8 : 3.3));
+        amp.gain.linearRampToValueAtTime(outdoors ? 0.72 : 0.045, now + (outdoors ? 0.42 : 0.22));
+        amp.gain.setValueAtTime(outdoors ? 0.52 : 0.028, now + (outdoors ? 0.9 : 0.55));
+        amp.gain.exponentialRampToValueAtTime(0.0001, now + (outdoors ? 7.2 : 4.2));
         src.connect(filter).connect(amp).connect(master); src.start(now); src.stop(now + (outdoors ? 4.9 : 3.4));
-        tone(48 + Math.random() * 18, outdoors ? 3.8 : 2.8, 'sine', outdoors ? 0.34 : 0.055, 26);
+        tone(42 + Math.random() * 16, outdoors ? 5.6 : 3.4, 'sine', outdoors ? 0.48 : 0.035, 24);
         thunder();
       }, 12000 + Math.random() * 20000);
     };
@@ -241,7 +249,8 @@ export function createAudio() {
     environment = location === 'street' ? 'street' : 'hall';
     if (!started || !ctx) return;
     const now = ctx.currentTime;
-    rainGainNode.gain.setTargetAtTime(environment === 'street' ? 0.2 : 0.075, now, 0.7);
+    rainGainNode.gain.setTargetAtTime(environment === 'street' ? 0.28 : 0.035, now, 0.7);
+    rainDetailGainNode.gain.setTargetAtTime(environment === 'street' ? 0.105 : 0.012, now, 0.8);
     windGainNode.gain.setTargetAtTime(environment === 'street' ? 0.19 : 0.10, now, 0.9);
     musicGainNode.gain.setTargetAtTime(environment === 'street' ? 0 : 0.82, now, 1.8);
     streetMusicGainNode.gain.setTargetAtTime(environment === 'street' ? 0.46 : 0, now, 1.8);
@@ -330,44 +339,45 @@ export function createAudio() {
   function reload() {
     if (!started) return;
     const now = ctx.currentTime;
-    const actions = [
-      [0.03, 0.09, 760, 0.46, 190],
-      [0.25, 0.14, 470, 0.34, 280],
-      [0.53, 0.09, 980, 0.5, 240],
-      [0.75, 0.19, 1350, 0.38, 430],
-      [1.01, 0.1, 820, 0.5, 150],
-    ];
-    for (const [offset, duration, frequency, level, endFrequency] of actions) {
-      const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
-      source.buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate);
-      const samples = source.buffer.getChannelData(0);
-      for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-      filter.type = 'bandpass'; filter.frequency.value = frequency; filter.Q.value = 1.6;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(level, now + offset + 0.003);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + duration);
-      source.connect(filter).connect(gain).connect(master);
-      source.start(now + offset); source.stop(now + offset + duration);
-      source.onended = () => {
-        source.disconnect();
-        filter.disconnect();
-        gain.disconnect();
-      };
-      const resonator = ctx.createOscillator(), resonatorGain = ctx.createGain();
-      resonator.type = 'triangle';
-      resonator.frequency.setValueAtTime(frequency / 4, now + offset);
-      resonator.frequency.exponentialRampToValueAtTime(endFrequency / 4, now + offset + duration);
-      resonatorGain.gain.setValueAtTime(0.0001, now + offset);
-      resonatorGain.gain.exponentialRampToValueAtTime(level * 0.45, now + offset + 0.003);
-      resonatorGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + duration);
-      resonator.connect(resonatorGain).connect(master);
-      resonator.start(now + offset);
-      resonator.stop(now + offset + duration);
-      resonator.onended = () => {
-        resonator.disconnect();
-        resonatorGain.disconnect();
-      };
-    }
+    // Sequência mecânica: soltar carregador, retirar, inserir, travar e puxar o ferrolho.
+    // Cada evento usa ruído filtrado + ressonância curta, em vez de bipes tonais.
+    const click = (offset, duration, center, level, resonance = 0.16) => {
+      const at = now + offset;
+      const source = ctx.createBufferSource();
+      const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let previous = 0;
+      for (let i = 0; i < data.length; i++) {
+        const white = Math.random() * 2 - 1;
+        previous = previous * 0.35 + white * 0.65;
+        data[i] = previous;
+      }
+      source.buffer = buffer;
+      const filter = ctx.createBiquadFilter(); filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(center, at); filter.Q.value = 1.1;
+      const amp = ctx.createGain();
+      amp.gain.setValueAtTime(0.0001, at);
+      amp.gain.exponentialRampToValueAtTime(level, at + 0.004);
+      amp.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+      source.connect(filter).connect(amp).connect(master);
+      source.start(at); source.stop(at + duration + 0.01);
+      source.onended = () => { source.disconnect(); filter.disconnect(); amp.disconnect(); };
+      const body = ctx.createOscillator(), bodyAmp = ctx.createGain();
+      body.type = 'triangle'; body.frequency.setValueAtTime(center * 0.42, at);
+      body.frequency.exponentialRampToValueAtTime(Math.max(35, center * 0.24), at + duration);
+      bodyAmp.gain.setValueAtTime(0.0001, at);
+      bodyAmp.gain.exponentialRampToValueAtTime(level * resonance, at + 0.006);
+      bodyAmp.gain.exponentialRampToValueAtTime(0.0001, at + duration * 1.5);
+      body.connect(bodyAmp).connect(master); body.start(at); body.stop(at + duration * 1.5 + 0.01);
+      body.onended = () => { body.disconnect(); bodyAmp.disconnect(); };
+    };
+    click(0.02, 0.075, 1450, 0.16, 0.12);  // trava do carregador
+    click(0.22, 0.16, 720, 0.20, 0.28);    // carregador sendo retirado
+    click(0.78, 0.11, 980, 0.17, 0.2);     // carregador novo encaixando
+    click(1.02, 0.085, 1850, 0.22, 0.13);  // batida na base
+    click(1.31, 0.13, 1250, 0.19, 0.22);   // ferrolho puxado
+    click(1.52, 0.07, 2100, 0.14, 0.12);   // ferrolho retornando
   }
+
   return { start, setEnvironment, update, toggleFlashlight, interaction, gunshot, emptyGun, reload };
 }

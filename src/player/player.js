@@ -7,7 +7,7 @@ const clamp = THREE.MathUtils.clamp;
 // Câmera sobre o ombro e parâmetros de movimentação no estilo do remake.
 const CAM = { distFree: 3.1, distAim: 1.9, shoulderFree: 0.8, shoulderAim: 0.5,
   height: 1.62, fovFree: 58, fovAim: 38, pitchMin: -0.62, pitchMax: 0.5 };
-const SPEED = { jog: 3.2, walk: 1.7, aim: 1.35, accel: 7.5, turn: 8 };
+const SPEED = { jog: 3.0, walk: 1.55, aim: 1.25, accel: 5.8, brake: 9.5, turn: 6.2 };
 const angleDiff = (a, b) => ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
 
 function makePistol() {
@@ -528,7 +528,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     x: world.spawn.x, z: world.spawn.z, y: world.spawn.y,
     yaw: world.spawn.yaw, pitch: -0.1, bodyYaw: world.spawn.yaw,
     vx: 0, vz: 0, speed: 0, aimT: 0, aiming: false, flash: true, phase: 0, camFrac: 1, active: false,
-    paused: false, recoil: 0, reloadTime: 0,
+    paused: false, recoil: 0, reloadTime: 0, gaitLean: 0,
     fixedView: null, fixedCameraPose: null,
   };
   const keys = {};
@@ -664,13 +664,14 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       new THREE.CircleGeometry(0.055, 7),
       new THREE.MeshBasicMaterial({ color: 0x221b13, transparent: true, opacity: 0.82, depthWrite: false }),
     );
-    mark.position.copy(displayPoint(hit.point));
-    mark.quaternion.identity();
+    mark.position.copy(displayPoint(hit.point)).addScaledVector(S.fixedView ? new THREE.Vector3(0, 0, 1) : normal, 0.004);
+    if (S.fixedView) mark.quaternion.identity();
+    else mark.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
     scene.add(mark);
     const sparks = [];
-    for (let i = 0; i < 4; i++) {
-      const velocity = new THREE.Vector3((Math.random() - 0.5) * 0.9, Math.random() * 0.8, (Math.random() - 0.5) * 0.9)
-        .addScaledVector(normal, 0.5);
+    for (let i = 0; i < 7; i++) {
+      const velocity = new THREE.Vector3((Math.random() - 0.5) * 1.8, Math.random() * 1.5, (Math.random() - 0.5) * 1.8)
+        .addScaledVector(normal, 0.75 + Math.random() * 0.55);
       const geometry = new THREE.BufferGeometry().setFromPoints([displayPoint(hit.point), displayPoint(hit.point)]);
       const material = new THREE.LineBasicMaterial({ color: i % 2 ? 0xffc56a : 0xe9e0c3, transparent: true });
       const spark = new THREE.Line(geometry, material);
@@ -705,8 +706,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       if (shot.impact) {
         const sparkProgress = clamp(shot.age / 0.42, 0, 1);
         shot.sparks.forEach(({ object, velocity }, index) => {
-          const from = shot.point.clone().addScaledVector(velocity, sparkProgress * 0.08);
-          const to = from.clone().addScaledVector(velocity, (1 - sparkProgress) * 0.1);
+          const from = shot.point.clone().addScaledVector(velocity, sparkProgress * 0.30);
+          const to = from.clone().addScaledVector(velocity, (1 - sparkProgress) * 0.34);
           object.geometry.setFromPoints([displayPoint(from), displayPoint(to)]);
           object.material.opacity = 1 - sparkProgress;
         });
@@ -745,9 +746,14 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     if (len > 0) { wx /= len; wz /= len; }
     let max = S.aiming ? SPEED.aim : (keys.ShiftLeft || keys.ShiftRight ? SPEED.walk : SPEED.jog);
     if (S.aiming && f < 0) max *= 0.8;
-    const k = 1 - Math.exp(-dt * SPEED.accel);
-    S.vx += (wx * max * (len > 0 ? 1 : 0) - S.vx) * k;
-    S.vz += (wz * max * (len > 0 ? 1 : 0) - S.vz) * k;
+    const hasInput = len > 0;
+    const targetX = wx * max * (hasInput ? 1 : 0);
+    const targetZ = wz * max * (hasInput ? 1 : 0);
+    const reversing = (S.vx * targetX + S.vz * targetZ) < -0.15;
+    const response = hasInput ? (reversing ? SPEED.brake : SPEED.accel) : SPEED.brake;
+    const k = 1 - Math.exp(-dt * response);
+    S.vx += (targetX - S.vx) * k;
+    S.vz += (targetZ - S.vz) * k;
     S.speed = Math.hypot(S.vx, S.vz);
     if (S.speed > 0.01) {
       let p = col.move(S.x, S.z, S.vx * dt, S.vz * dt, 0.36, S.y);
@@ -766,13 +772,15 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     S.speed = Math.hypot(S.vx, S.vz);
     S.y = col.floorY(S.x, S.z, S.y) ?? S.y;
     const wantYaw = S.aiming ? S.yaw : (S.speed > 0.35 ? Math.atan2(S.vx, S.vz) : S.bodyYaw);
-    S.bodyYaw += angleDiff(S.bodyYaw, wantYaw) * (1 - Math.exp(-dt * (S.aiming ? 20 : SPEED.turn)));
+    S.bodyYaw += angleDiff(S.bodyYaw, wantYaw) * (1 - Math.exp(-dt * (S.aiming ? 15 : SPEED.turn)));
+    const lateral = Math.cos(S.bodyYaw) * S.vx - Math.sin(S.bodyYaw) * S.vz;
+    S.gaitLean += (clamp(-lateral * 0.045, -0.075, 0.075) - S.gaitLean) * (1 - Math.exp(-dt * 5));
     S.aimT += ((S.aiming ? 1 : 0) - S.aimT) * (1 - Math.exp(-dt * 11));
   }
 
   function animateModel(dt) {
     const m = model;
-    S.recoil = Math.max(0, S.recoil - dt * 6);
+    S.recoil = Math.max(0, S.recoil - dt * 4.8);
     S.reloadTime = Math.max(0, S.reloadTime - dt);
     if (m.muzzleTime > 0) {
       m.muzzleTime -= dt;
@@ -785,18 +793,19 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     S.phase += S.speed * dt * 2.8;
     const amp = clamp(S.speed / SPEED.jog, 0, 1);
     const sw = Math.sin(S.phase);
-    const reload = S.reloadTime > 0 ? Math.sin((1 - S.reloadTime / 1.15) * Math.PI) : 0;
+    const reload = S.reloadTime > 0 ? Math.sin((1 - S.reloadTime / 1.65) * Math.PI) : 0;
     if (m.assetRig) {
       const idle = Math.sin(performance.now() * 0.0016) * 0.009;
       m.root.rotation.x = -0.04 * amp - 0.018 * S.aimT;
-      m.root.rotation.z = Math.sin(S.phase) * amp * 0.045 + Math.sin(S.phase * 0.5) * 0.014 * amp;
-      m.legL.rotation.x = sw * amp * 0.46;
-      m.legR.rotation.x = -sw * amp * 0.46;
+      m.root.rotation.z = Math.sin(S.phase) * amp * 0.035 + S.gaitLean + Math.sin(S.phase * 0.5) * 0.018 * amp;
+      m.root.rotation.y = S.bodyYaw + Math.sin(S.phase * 0.5) * amp * 0.012;
+      m.legL.rotation.x = sw * amp * 0.40;
+      m.legR.rotation.x = -sw * amp * 0.40;
       // The original OBJ is divided at the knees; flex each lower leg on its recovery step.
       m.kneeL.rotation.x = Math.max(0, sw) * amp * 0.8;
       m.kneeR.rotation.x = Math.max(0, -sw) * amp * 0.8;
-      m.armL.rotation.x = -sw * amp * 0.2 + idle;
-      m.armR.rotation.x = sw * amp * 0.2 - idle;
+      m.armL.rotation.x = -sw * amp * 0.25 + idle;
+      m.armR.rotation.x = sw * amp * 0.25 - idle;
       m.armL.rotation.z = 0.035 * (1 - amp);
       m.armR.rotation.z = -0.035 * (1 - amp);
       const elbowIdle = 0.08 + Math.abs(sw) * amp * 0.05;
@@ -804,25 +813,26 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       m.armR.userData.forearm.rotation.x = elbowIdle;
       const a = S.aimT;
       const raised = -Math.PI / 2 - S.pitch;
-      m.armR.rotation.x = THREE.MathUtils.lerp(m.armR.rotation.x, raised, a) - S.recoil * 0.18 * a;
+      m.armR.rotation.x = THREE.MathUtils.lerp(m.armR.rotation.x, raised, a) - S.recoil * 0.30 * a;
       m.armL.rotation.x = THREE.MathUtils.lerp(m.armL.rotation.x, raised, a) + reload * 0.35;
-      m.armR.userData.forearm.rotation.x = THREE.MathUtils.lerp(elbowIdle, 0.42, a) + S.recoil * 0.2 * a;
+      m.armR.userData.forearm.rotation.x = THREE.MathUtils.lerp(elbowIdle, 0.42, a) + S.recoil * 0.28 * a;
       m.armL.userData.forearm.rotation.x = THREE.MathUtils.lerp(elbowIdle, 0.42, a) + reload * 0.5;
       m.armL.rotation.z = THREE.MathUtils.lerp(m.armL.rotation.z, 0.2, a) + reload * 0.12;
       m.weapon.position.set(-2.0, -10.3 + reload * 3.2, 1.6);
       const aimedWeaponPitch = -S.pitch - m.armR.rotation.x - m.armR.userData.forearm.rotation.x;
       m.weapon.rotation.x = THREE.MathUtils.lerp(1.3, aimedWeaponPitch, a)
-        + reload * 0.28 + S.recoil * 0.14;
+        + reload * 0.28 + S.recoil * 0.27;
       m.weapon.rotation.y = 0;
-      m.head.rotation.x = -S.pitch * 0.5 * a;
-      m.head.rotation.z = -m.root.rotation.z * 0.55 + Math.sin(S.phase) * amp * 0.012;
+      m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 0.5) * amp * 0.012;
+      m.head.rotation.z = -m.root.rotation.z * 0.7 + Math.sin(S.phase * 0.5) * amp * 0.009;
       return;
     }
     m.legL.rotation.x = sw * amp * 0.75;
     m.legR.rotation.x = -sw * amp * 0.75;
     const idle = Math.sin(performance.now() * 0.0016) * 0.012;
     m.root.rotation.x = -0.025 * amp - 0.012 * S.aimT;
-    m.root.rotation.z = Math.sin(S.phase) * amp * 0.04;
+    m.root.rotation.z = Math.sin(S.phase) * amp * 0.035 + S.gaitLean;
+    m.root.rotation.y = S.bodyYaw + Math.sin(S.phase * 0.5) * amp * 0.012;
     m.armL.rotation.x = -sw * amp * 0.4 + idle;
     m.armR.rotation.x = sw * amp * 0.4 - idle;
     m.armL.rotation.z = 0.06 * (1 - amp); m.armR.rotation.z = -0.06 * (1 - amp);
@@ -843,9 +853,9 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     m.armL.rotation.z += reload * 0.12;
     m.weapon.position.set(0, -0.36 + reload * 0.12, 0.035);
     const aimedWeaponPitch = -S.pitch - m.armR.rotation.x - m.armR.userData.forearm.rotation.x;
-    m.weapon.rotation.x = THREE.MathUtils.lerp(1.3, aimedWeaponPitch, a) + S.recoil * 0.14;
-    m.head.rotation.x = -S.pitch * 0.5 * a;
-    m.head.rotation.z = -m.root.rotation.z * 0.45 + Math.sin(S.phase) * amp * 0.012;
+    m.weapon.rotation.x = THREE.MathUtils.lerp(1.3, aimedWeaponPitch, a) + S.recoil * 0.27;
+    m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 0.5) * amp * 0.012;
+    m.head.rotation.z = -m.root.rotation.z * 0.55 + Math.sin(S.phase * 0.5) * amp * 0.009;
   }
 
   function updateFlashlight() {
@@ -904,6 +914,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     else S.camFrac += (frac - S.camFrac) * Math.min(1, dt * 5);
     camera.position.copy(pivot).addScaledVector(rayDir, full * S.camFrac);
     camera.lookAt(tmp.copy(camera.position).addScaledVector(dir, 10));
+    tmp.y += S.recoil * 0.42 * a;
+    camera.lookAt(tmp);
     const fov = THREE.MathUtils.lerp(CAM.fovFree, CAM.fovAim, a);
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     model.root.visible = full * S.camFrac > 0.75;
@@ -943,7 +955,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       S.paused = paused;
       if (paused) { S.aiming = false; S.vx = 0; S.vz = 0; S.speed = 0; }
     },
-    startReload() { S.reloadTime = 1.15; S.aiming = false; },
+    startReload() { S.reloadTime = 1.65; S.aiming = false; },
     teleport(spawn) {
       S.x = spawn.x; S.y = spawn.y; S.z = spawn.z;
       S.yaw = spawn.yaw; S.bodyYaw = spawn.yaw; S.pitch = 0;
