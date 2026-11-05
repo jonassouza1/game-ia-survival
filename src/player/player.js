@@ -7,7 +7,7 @@ const clamp = THREE.MathUtils.clamp;
 // Câmera sobre o ombro e parâmetros de movimentação no estilo do remake.
 const CAM = { distFree: 3.1, distAim: 1.9, shoulderFree: 0.8, shoulderAim: 0.5,
   height: 1.62, fovFree: 58, fovAim: 38, pitchMin: -0.62, pitchMax: 0.5 };
-const SPEED = { jog: 3.0, walk: 1.55, aim: 1.25, accel: 5.8, brake: 9.5, turn: 6.2 };
+const SPEED = { jog: 2.75, walk: 1.42, aim: 1.18, accel: 4.7, brake: 7.8, turn: 5.1 };
 const angleDiff = (a, b) => ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
 
 function makePistol() {
@@ -787,28 +787,36 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       if (m.muzzleTime <= 0 && m.muzzleFlash) m.muzzleFlash.visible = false;
     }
     const stride = clamp(S.speed / SPEED.jog, 0, 1);
-    const strideBob = (Math.sin(S.phase * 2) * 0.022 + Math.sin(S.phase) * 0.006) * stride;
+    const strideBob = (Math.sin(S.phase * 2) * 0.018 + Math.abs(Math.sin(S.phase)) * 0.012) * stride;
     m.root.position.set(S.x, S.y + strideBob, S.z);
     m.root.rotation.y = S.bodyYaw;
-    S.phase += S.speed * dt * 2.8;
+    S.phase += S.speed * dt * 2.55;
     const amp = clamp(S.speed / SPEED.jog, 0, 1);
     const sw = Math.sin(S.phase);
-    const reload = S.reloadTime > 0 ? Math.sin((1 - S.reloadTime / 1.65) * Math.PI) : 0;
+    const reload = S.reloadTime > 0 ? Math.sin((1 - S.reloadTime / 2.15) * Math.PI) : 0;
     if (m.assetRig) {
-      const idle = Math.sin(performance.now() * 0.0016) * 0.009;
-      m.root.rotation.x = -0.04 * amp - 0.018 * S.aimT;
-      m.root.rotation.z = Math.sin(S.phase) * amp * 0.035 + S.gaitLean + Math.sin(S.phase * 0.5) * 0.018 * amp;
-      m.root.rotation.y = S.bodyYaw + Math.sin(S.phase * 0.5) * amp * 0.012;
-      m.legL.rotation.x = sw * amp * 0.40;
-      m.legR.rotation.x = -sw * amp * 0.40;
-      // The original OBJ is divided at the knees; flex each lower leg on its recovery step.
-      m.kneeL.rotation.x = Math.max(0, sw) * amp * 0.8;
-      m.kneeR.rotation.x = Math.max(0, -sw) * amp * 0.8;
-      m.armL.rotation.x = -sw * amp * 0.25 + idle;
-      m.armR.rotation.x = sw * amp * 0.25 - idle;
-      m.armL.rotation.z = 0.035 * (1 - amp);
-      m.armR.rotation.z = -0.035 * (1 - amp);
-      const elbowIdle = 0.08 + Math.abs(sw) * amp * 0.05;
+      const idle = Math.sin(performance.now() * 0.00125) * 0.006;
+      const stepLiftL = Math.max(0, -sw);
+      const stepLiftR = Math.max(0, sw);
+      // Pequenas compensações de quadril, joelhos e ombros quebram o ciclo rígido
+      // de pernas perfeitamente alternadas e dão peso ao apoio de cada passada.
+      m.root.rotation.x = -0.026 * amp - 0.018 * S.aimT + Math.sin(S.phase * 2 + 0.5) * 0.012 * amp;
+      m.root.rotation.z = Math.sin(S.phase * 0.5 + 0.7) * amp * 0.022 + S.gaitLean
+        + Math.sin(S.phase * 0.5) * 0.012 * amp;
+      m.root.rotation.y = S.bodyYaw + Math.sin(S.phase * 0.5) * amp * 0.018;
+      const strideWave = Math.sin(S.phase);
+      const weightShift = Math.sin(S.phase * 2 + 0.42) * amp;
+      m.legL.rotation.x = strideWave * amp * 0.43 + Math.max(0, -strideWave) * amp * 0.10;
+      m.legR.rotation.x = -Math.sin(S.phase + 0.12) * amp * 0.43 + Math.max(0, strideWave) * amp * 0.08;
+      m.legL.rotation.z = weightShift * 0.035;
+      m.legR.rotation.z = -weightShift * 0.032;
+      m.kneeL.rotation.x = stepLiftL * amp * 0.72 + Math.max(0, Math.sin(S.phase - 0.35)) * amp * 0.08;
+      m.kneeR.rotation.x = stepLiftR * amp * 0.68 + Math.max(0, -Math.sin(S.phase + 0.35)) * amp * 0.08;
+      m.armL.rotation.x = -Math.sin(S.phase + 0.18) * amp * 0.24 + idle;
+      m.armR.rotation.x = Math.sin(S.phase - 0.12) * amp * 0.25 - idle;
+      m.armL.rotation.z = 0.025 * (1 - amp) + stepLiftR * amp * 0.018;
+      m.armR.rotation.z = -0.025 * (1 - amp) - stepLiftL * amp * 0.018;
+      const elbowIdle = 0.075 + Math.abs(sw) * amp * 0.075;
       m.armL.userData.forearm.rotation.x = elbowIdle;
       m.armR.userData.forearm.rotation.x = elbowIdle;
       const a = S.aimT;
@@ -823,8 +831,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       m.weapon.rotation.x = THREE.MathUtils.lerp(1.3, aimedWeaponPitch, a)
         + reload * 0.28 + S.recoil * 0.27;
       m.weapon.rotation.y = 0;
-      m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 0.5) * amp * 0.012;
-      m.head.rotation.z = -m.root.rotation.z * 0.7 + Math.sin(S.phase * 0.5) * amp * 0.009;
+      m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 2 + 0.9) * amp * 0.012;
+      m.head.rotation.z = -m.root.rotation.z * 0.82 + Math.sin(S.phase * 0.5 + 0.6) * amp * 0.016;
       return;
     }
     m.legL.rotation.x = sw * amp * 0.75;
@@ -854,7 +862,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     m.weapon.position.set(0, -0.36 + reload * 0.12, 0.035);
     const aimedWeaponPitch = -S.pitch - m.armR.rotation.x - m.armR.userData.forearm.rotation.x;
     m.weapon.rotation.x = THREE.MathUtils.lerp(1.3, aimedWeaponPitch, a) + S.recoil * 0.27;
-    m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 0.5) * amp * 0.012;
+    m.head.rotation.x = -S.pitch * 0.5 * a + Math.sin(S.phase * 0.5) * amp * 0.016;
     m.head.rotation.z = -m.root.rotation.z * 0.55 + Math.sin(S.phase * 0.5) * amp * 0.009;
   }
 
@@ -955,7 +963,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       S.paused = paused;
       if (paused) { S.aiming = false; S.vx = 0; S.vz = 0; S.speed = 0; }
     },
-    startReload() { S.reloadTime = 1.65; S.aiming = false; },
+    startReload() { S.reloadTime = 2.15; S.aiming = false; },
     teleport(spawn) {
       S.x = spawn.x; S.y = spawn.y; S.z = spawn.z;
       S.yaw = spawn.yaw; S.bodyYaw = spawn.yaw; S.pitch = 0;

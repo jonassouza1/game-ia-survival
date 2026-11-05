@@ -3,7 +3,7 @@ export function createAudio() {
   let ctx, master, shotBus, musicGainNode, streetMusicGainNode, started = false, stepClock = 0;
   let musicTimer, streetMusicTimer, thunderTimer, zombieTimer;
   let rainLayerGainNode, rainDetailGainNode;
-  let gunshotBuffer, zombieMoanBuffer, zombieHordeBuffer;
+  let gunshotBuffer, reloadBuffer, reloadBufferPromise, zombieMoanBuffer, zombieHordeBuffer;
   const zombieVoices = new Set();
   let environment = 'hall', rainGainNode, windGainNode;
 
@@ -213,12 +213,15 @@ export function createAudio() {
     hum.connect(humGain).connect(master); hum.start();
     started = true;
     startMusic();
+    reloadBufferPromise = loadAudioAsset('/audio/pistol-reload-original.wav');
     Promise.all([
       loadAudioAsset('/audio/beretta-m9-shot.mp3'),
+      reloadBufferPromise,
       loadAudioAsset('/audio/zombie-moan.mp3'),
       loadAudioAsset('/audio/zombie-horde.mp3'),
-    ]).then(([shot, moan, horde]) => {
+    ]).then(([shot, reload, moan, horde]) => {
       gunshotBuffer = shot;
+      reloadBuffer = reload;
       zombieMoanBuffer = moan;
       zombieHordeBuffer = horde;
       if (environment === 'street') playZombieAmbience();
@@ -336,47 +339,49 @@ export function createAudio() {
     tone(1850, 0.045, 'square', 0.18, 780, shotBus);
   }
   function emptyGun() { tone(380, 0.035, 'square', 0.026, 250); }
+  function playReloadBuffer() {
+    if (!started || !reloadBuffer) return;
+    const now = ctx.currentTime;
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    const low = ctx.createBiquadFilter();
+    const room = ctx.createDelay(0.45);
+    const roomFilter = ctx.createBiquadFilter();
+    const roomGain = ctx.createGain();
+    source.buffer = reloadBuffer;
+    source.playbackRate.value = 0.98 + Math.random() * 0.04;
+    low.type = 'lowpass';
+    low.frequency.value = environment === 'hall' ? 5200 : 6800;
+    gain.gain.value = 0.88;
+    room.delayTime.value = environment === 'hall' ? 0.075 : 0.035;
+    roomFilter.type = 'lowpass';
+    roomFilter.frequency.value = 1900;
+    roomGain.gain.value = environment === 'hall' ? 0.13 : 0.045;
+    source.connect(low).connect(gain).connect(master);
+    gain.connect(room).connect(roomFilter).connect(roomGain).connect(master);
+    source.onended = () => {
+      source.disconnect(); low.disconnect(); gain.disconnect();
+      room.disconnect(); roomFilter.disconnect(); roomGain.disconnect();
+    };
+    source.start(now);
+  }
+
   function reload() {
     if (!started) return;
-    const now = ctx.currentTime;
-    // Sequência mecânica: soltar carregador, retirar, inserir, travar e puxar o ferrolho.
-    // Cada evento usa ruído filtrado + ressonância curta, em vez de bipes tonais.
-    const click = (offset, duration, center, level, resonance = 0.16) => {
-      const at = now + offset;
-      const source = ctx.createBufferSource();
-      const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      let previous = 0;
-      for (let i = 0; i < data.length; i++) {
-        const white = Math.random() * 2 - 1;
-        previous = previous * 0.35 + white * 0.65;
-        data[i] = previous;
-      }
-      source.buffer = buffer;
-      const filter = ctx.createBiquadFilter(); filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(center, at); filter.Q.value = 1.1;
-      const amp = ctx.createGain();
-      amp.gain.setValueAtTime(0.0001, at);
-      amp.gain.exponentialRampToValueAtTime(level, at + 0.004);
-      amp.gain.exponentialRampToValueAtTime(0.0001, at + duration);
-      source.connect(filter).connect(amp).connect(master);
-      source.start(at); source.stop(at + duration + 0.01);
-      source.onended = () => { source.disconnect(); filter.disconnect(); amp.disconnect(); };
-      const body = ctx.createOscillator(), bodyAmp = ctx.createGain();
-      body.type = 'triangle'; body.frequency.setValueAtTime(center * 0.42, at);
-      body.frequency.exponentialRampToValueAtTime(Math.max(35, center * 0.24), at + duration);
-      bodyAmp.gain.setValueAtTime(0.0001, at);
-      bodyAmp.gain.exponentialRampToValueAtTime(level * resonance, at + 0.006);
-      bodyAmp.gain.exponentialRampToValueAtTime(0.0001, at + duration * 1.5);
-      body.connect(bodyAmp).connect(master); body.start(at); body.stop(at + duration * 1.5 + 0.01);
-      body.onended = () => { body.disconnect(); bodyAmp.disconnect(); };
-    };
-    click(0.02, 0.075, 1450, 0.16, 0.12);  // trava do carregador
-    click(0.22, 0.16, 720, 0.20, 0.28);    // carregador sendo retirado
-    click(0.78, 0.11, 980, 0.17, 0.2);     // carregador novo encaixando
-    click(1.02, 0.085, 1850, 0.22, 0.13);  // batida na base
-    click(1.31, 0.13, 1250, 0.19, 0.22);   // ferrolho puxado
-    click(1.52, 0.07, 2100, 0.14, 0.12);   // ferrolho retornando
+    if (reloadBuffer) {
+      playReloadBuffer();
+      return;
+    }
+    // Se o jogador recarregar imediatamente após iniciar o jogo, aguarda o WAV
+    // original em vez de tocar um efeito provisório artificial.
+    if (reloadBufferPromise) {
+      reloadBufferPromise.then((buffer) => {
+        if (buffer && started) {
+          reloadBuffer = buffer;
+          playReloadBuffer();
+        }
+      });
+    }
   }
 
   return { start, setEnvironment, update, toggleFlashlight, interaction, gunshot, emptyGun, reload };

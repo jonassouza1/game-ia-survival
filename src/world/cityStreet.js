@@ -815,16 +815,46 @@ export function buildCityStreet(group) {
   for (let i = 0; i < 10; i++) {
     const seed = i * 1.37;
     const flame = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.52 + (i % 3) * 0.18, 1.35 + (i % 2) * 0.42),
+      new THREE.PlaneGeometry(0.62 + (i % 3) * 0.22, 1.55 + (i % 2) * 0.52),
       flameMaterial(seed),
     );
-    flame.position.set((i - 4.5) * 0.16, 1.05 + (i % 3) * 0.1, -0.78 + (i % 2) * 0.38);
+    flame.position.set((i - 4.5) * 0.18, 1.12 + (i % 3) * 0.14, -0.86 + (i % 2) * 0.52);
     flame.userData.seed = seed;
+    flame.userData.originX = flame.position.x;
     flames.push(flame);
     fire.add(flame);
+    // Uma segunda lâmina cruzada dá volume ao fogo quando visto de lado,
+    // sem depender de transparência volumétrica pesada.
+    const crossFlame = new THREE.Mesh(flame.geometry, flameMaterial(seed + 0.73));
+    crossFlame.position.copy(flame.position);
+    crossFlame.rotation.y = Math.PI / 2;
+    crossFlame.userData.seed = seed + 0.73;
+    crossFlame.userData.originX = crossFlame.position.x;
+    flames.push(crossFlame);
+    fire.add(crossFlame);
   }
+  // Mancha de fuligem e combustível queimado no asfalto, com bordas suaves.
+  const scorchCanvas = document.createElement('canvas');
+  scorchCanvas.width = scorchCanvas.height = 128;
+  const scorchCtx = scorchCanvas.getContext('2d');
+  const scorchGradient = scorchCtx.createRadialGradient(64, 64, 8, 64, 64, 62);
+  scorchGradient.addColorStop(0, 'rgba(12,10,8,0.82)');
+  scorchGradient.addColorStop(0.42, 'rgba(24,17,12,0.62)');
+  scorchGradient.addColorStop(0.72, 'rgba(44,25,13,0.24)');
+  scorchGradient.addColorStop(1, 'rgba(30,20,14,0)');
+  scorchCtx.fillStyle = scorchGradient;
+  scorchCtx.fillRect(0, 0, 128, 128);
+  const scorchMap = new THREE.CanvasTexture(scorchCanvas);
+  scorchMap.colorSpace = THREE.SRGBColorSpace;
+  const scorchGround = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.8, 3.5),
+    new THREE.MeshBasicMaterial({ map: scorchMap, transparent: true, opacity: 0.72, depthWrite: false }),
+  );
+  scorchGround.rotation.x = -Math.PI / 2;
+  scorchGround.position.set(0, 0.018, 0.12);
+  fire.add(scorchGround);
   group.add(fire);
-  const fireLight = new THREE.PointLight(0xff6a24, 34, 11, 1.8);
+  const fireLight = new THREE.PointLight(0xff6a24, 42, 14, 1.65);
   fireLight.position.set(0, 1.5, -0.35);
   fire.add(fireLight);
   const smokePuffs = [];
@@ -1190,13 +1220,16 @@ export function buildCityStreet(group) {
         const phase = flame.userData.seed;
         flame.material.uniforms.time.value = elapsed;
         flame.scale.set(
-          0.88 + Math.sin(elapsed * 11 + phase) * 0.14,
-          0.9 + Math.sin(elapsed * 8 + phase) * 0.16,
+          0.78 + Math.sin(elapsed * 12.5 + phase) * 0.22,
+          0.82 + Math.sin(elapsed * 7.4 + phase * 1.3) * 0.24,
           1,
         );
-        flame.rotation.z = Math.sin(elapsed * 3.5 + phase) * 0.1;
+        flame.rotation.z = Math.sin(elapsed * 4.1 + phase) * 0.14;
+        flame.position.x = flame.userData.originX + Math.sin(elapsed * 5.8 + phase) * 0.045;
       });
-      fireLight.intensity = 31 + Math.sin(elapsed * 10) * 8 + Math.sin(elapsed * 17) * 3;
+      fireLight.intensity = 36 + Math.sin(elapsed * 8.2) * 11
+        + Math.sin(elapsed * 15.7) * 5.2 + Math.sin(elapsed * 24.1) * 2.4;
+      fireLight.color.setHSL(0.055 + Math.sin(elapsed * 2.4) * 0.006, 0.92, 0.52);
       smokePuffs.forEach((puff) => {
         const progress = (elapsed * 0.11 + puff.userData.phase) % 1;
         puff.position.y = 1.55 + progress * 5.4;

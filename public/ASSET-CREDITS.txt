@@ -19,3 +19,14 @@ Zombie Horde
 - Source: SoundBible, https://soundbible.com/1833-Zombie-Horde.html
 - License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
 - The game varies playback speed, stereo position, level, and filtered reflections.
+
+
+Audio original criado para este projeto:
+- public/audio/pistol-reload-original.wav — efeito original de recarga de pistola, sintetizado especificamente para RPD Survival; não é extraído de Resident Evil ou de outra obra.
+
+Recarga da pistola (revisão 2)
+- public/audio/pistol-reload-original.wav — áudio original sintetizado para este projeto, com camadas de cliques, raspagem metálica e impactos mecânicos. Não é uma gravação retirada de Resident Evil.
+
+Modelos e cenário
+- Os modelos 3D e texturas existentes foram mantidos dentro de public/models e public/textures para carregamento local, sem chamadas a servidores de assets durante o jogo.
+- O carro coberto possui atribuição e licença CC0 documentadas em public/models/covered_car/ASSET.txt.

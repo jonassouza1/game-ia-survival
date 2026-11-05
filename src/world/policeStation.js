@@ -55,6 +55,7 @@ export function buildPoliceStation(scene) {
   col.addFloor({ minX: x0 + 0.3, maxX: x1 - 0.3, minZ: z0 + 0.3, maxZ: 22.8, y: 0 });
   const props = [];
   const lights = [];
+  const windowRain = [];
   const animatedDoors = [];
   let pendingDoorTransition = null;
   let northDoorItem = null;
@@ -198,6 +199,29 @@ export function buildPoliceStation(scene) {
     sh.absarc(0, hr, w / 2, 0, Math.PI, false); sh.lineTo(-w / 2, 0);
     b.geo(new THREE.ShapeGeometry(sh, 8), pane, lx, yb, 0.04, DN);
     const top = hr + w / 2;
+    // Filetes de chuva aderidos ao lado externo do vidro: animam na janela,
+    // sem criar precipitação dentro do saguão.
+    const streakCount = Math.max(10, Math.round(w * 7));
+    const rainPositions = new Float32Array(streakCount * 6);
+    const rainMeta = [];
+    for (let i = 0; i < streakCount; i++) {
+      const rx = (Math.random() - 0.5) * w * 0.82;
+      const ry = 0.12 + Math.random() * Math.max(0.2, top - 0.35);
+      const length = 0.12 + Math.random() * 0.27;
+      const a = b.world(lx + rx, yb + ry, 0.105);
+      const c = b.world(lx + rx + 0.018, yb + ry - length, 0.105);
+      rainPositions.set([a.x, a.y, a.z, c.x, c.y, c.z], i * 6);
+      rainMeta.push({ minY: b.world(lx, yb + 0.08, 0.105).y, maxY: b.world(lx, yb + top - 0.05, 0.105).y,
+        speed: 0.7 + Math.random() * 1.25, offset: Math.random() * 2.5 });
+    }
+    const rainGeo = new THREE.BufferGeometry();
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+    const rainMesh = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({
+      color: 0x9eb8c7, transparent: true, opacity: 0.48, depthWrite: false,
+    }));
+    rainMesh.renderOrder = 3;
+    scene.add(rainMesh);
+    windowRain.push({ mesh: rainMesh, meta: rainMeta, base: rainPositions.slice() });
     box(0.16, hr + 0.14, 0.14, M.trim, lx - w / 2 - 0.08, yb + hr / 2, 0.07, D0);
     box(0.16, hr + 0.14, 0.14, M.trim, lx + w / 2 + 0.08, yb + hr / 2, 0.07, D0);
     b.geo(new THREE.TorusGeometry(w / 2 + 0.08, 0.08, 4, 12, Math.PI), M.trim, lx, yb + hr, 0.07, D0);
@@ -437,8 +461,11 @@ export function buildPoliceStation(scene) {
     const minCenter = Math.min(centerStart, centerEnd), maxCenter = Math.max(centerStart, centerEnd);
     col.addRamp({
       minX: minCenter - stairWidth / 2, maxX: maxCenter + stairWidth / 2,
-      minZ: -12, maxZ: zS, zFrom: zS, yFrom: R * 0.5, zTo: -11.8, yTo: gy,
-      centerXFrom: centerStart, centerXTo: centerEnd, halfWidth: stairWidth / 2,
+      minZ: -12.55, maxZ: zS + 0.55, zFrom: zS, yFrom: R * 0.5, zTo: -11.8, yTo: gy,
+      centerXFrom: centerStart, centerXTo: centerEnd,
+      centerXAt: (t) => sx * (7.05 + 0.85 * Math.sin(t * Math.PI / 2) ** 2),
+      // Pequena margem para o raio do personagem e os pontos de apoio dos pés.
+      halfWidth: stairWidth / 2 + 0.42,
     });
   }
 
@@ -701,8 +728,8 @@ export function buildPoliceStation(scene) {
     box(1.1, 0.62, 0.7, M.metal, 3.7, 0.31, 3.0, D0);
     box(1.14, 0.12, 0.74, M.black, 3.7, 0.68, 3.0, D0);
     box(0.18, 0.12, 0.04, M.brass, 3.7, 0.5, 3.37, D0);
-    col.addBox(0, dz, 8.6, 2.0, {});
-    col.addBox(3.7, 3.0, 1.2, 0.8, {});
+    col.addBox(0, dz, 8.6, 2.0, { y0: 0, y1: 1.55 });
+    col.addBox(3.7, 3.0, 1.2, 0.8, { y0: 0, y1: 0.85 });
   }
 
   // Área de espera lateral: bancos estofados, mesas baixas e luminárias de apoio.
@@ -727,7 +754,7 @@ export function buildPoliceStation(scene) {
       }
     }
     b.pop();
-    col.addBox(x, z, 1.0, 2.5, {});
+    col.addBox(x, z, 1.65, 2.65, { y0: 0, y1: 1.55 });
   };
   waitingBench(-9.15, 7.8, Math.PI / 2);
   waitingBench(9.15, 7.8, -Math.PI / 2);
@@ -741,7 +768,7 @@ export function buildPoliceStation(scene) {
     box(0.46, 0.05, 0.32, M.paper, x - 0.28, 0.93, z - 0.06, D0);
     box(0.32, 0.03, 0.24, M.paper, x - 0.26, 0.97, z - 0.04, { cam: false, ry: 0.18 });
     box(0.24, 0.16, 0.22, M.black, x + 0.37, 0.99, z + 0.08, D0);
-    col.addBox(x, z, 1.5, 0.9, {});
+    col.addBox(x, z, 1.65, 1.05, { y0: 0, y1: 1.15 });
   }
 
   // Papéis espalhados pelo chão e manchas — o saguão já foi abandonado às pressas
@@ -883,8 +910,24 @@ export function buildPoliceStation(scene) {
     flash = Math.max(0, flash - dt * (flash > 0.55 ? 2.4 : 1.1));
     const f = flash * (0.65 + 0.35 * Math.sin(t * 61));
     M.glass.color.setScalar(1 + f * 7.5);
+    M.stainedGlass.color.setScalar(1 + f * 5.8);
     if (M.glass.emissive) M.glass.emissive.setRGB(0.18 + f * 1.9, 0.22 + f * 2.2, 0.30 + f * 2.8);
-    hemi.intensity = hemiBase + f * 3.1;
+    // O vidro do RPD usa principalmente stainedGlass (não M.glass); os dois
+    // materiais recebem o clarão para que as janelas realmente acendam.
+    if (M.stainedGlass.emissive) M.stainedGlass.emissive.setRGB(0.22 + f * 1.8, 0.28 + f * 2.1, 0.38 + f * 2.7);
+    windowRain.forEach(({ mesh, meta, base }) => {
+      const attr = mesh.geometry.attributes.position;
+      for (let i = 0; i < meta.length; i++) {
+        const m = meta[i], j = i * 6;
+        let y = base[j + 1] - ((t * m.speed + m.offset) % Math.max(0.25, m.maxY - m.minY));
+        if (y < m.minY) y = m.maxY - (m.minY - y);
+        const dropLength = base[j + 1] - base[j + 4];
+        attr.setY(i * 2, y);
+        attr.setY(i * 2 + 1, y - dropLength);
+      }
+      attr.needsUpdate = true;
+    });
+    hemi.intensity = hemiBase + f * 4.6;
     if (flickerLight) flickerLight.intensity = flickerLight.userData.base * (0.88 + 0.12 * Math.sin(t * 11) - (Math.random() < 0.015 ? 0.55 : 0));
   }
 

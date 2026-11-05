@@ -31,10 +31,13 @@ export class CollisionWorld {
       }
     }
     for (const ramp of this.ramps) {
-      if (z < ramp.minZ || z > ramp.maxZ) continue;
-      const t = Math.min(1, Math.max(0, (z - ramp.zFrom) / (ramp.zTo - ramp.zFrom)));
+      if (z < ramp.minZ - 0.08 || z > ramp.maxZ + 0.08) continue;
+      const span = ramp.zTo - ramp.zFrom;
+      const t = Math.min(1, Math.max(0, (z - ramp.zFrom) / (Math.abs(span) < 1e-6 ? 1 : span)));
       if (ramp.centerXFrom !== undefined) {
-        const centerX = ramp.centerXFrom + (ramp.centerXTo - ramp.centerXFrom) * t;
+        const centerX = ramp.centerXAt ? ramp.centerXAt(t) : ramp.centerXFrom + (ramp.centerXTo - ramp.centerXFrom) * t;
+        // A folga considera o raio do jogador: os pontos de apoio dos pés não
+        // devem cair no piso inferior quando o centro ainda está sobre a escada.
         if (Math.abs(x - centerX) > ramp.halfWidth) continue;
       } else if (x < ramp.minX || x > ramp.maxX) {
         continue;
@@ -63,18 +66,29 @@ export class CollisionWorld {
     let nx = x, nz = z;
     const canMoveTo = (nextX, nextZ) => {
       if (this.collides(nextX, nextZ, radius, y)) return false;
+      const centerFloor = this.floorY(nextX, nextZ, y);
+      if (centerFloor === null || centerFloor < y - 0.58 || centerFloor > y + 0.58) return false;
+      // A borda dos degraus não pode exigir que os cinco pontos de apoio estejam
+      // na mesma superfície: isso prendia o jogador no último degrau e nas curvas.
       const support = [
-        [nextX, nextZ],
-        [nextX - radius, nextZ], [nextX + radius, nextZ],
-        [nextX, nextZ - radius], [nextX, nextZ + radius],
+        [nextX - radius * 0.78, nextZ], [nextX + radius * 0.78, nextZ],
+        [nextX, nextZ - radius * 0.78], [nextX, nextZ + radius * 0.78],
       ];
-      return support.every(([sx, sz]) => {
+      let supported = 0;
+      for (const [sx, sz] of support) {
         const floor = this.floorY(sx, sz, y);
-        return floor !== null && floor >= y - 0.45 && floor <= y + 0.45;
-      });
+        if (floor !== null && Math.abs(floor - centerFloor) <= 0.68) supported++;
+      }
+      return supported >= 2;
     };
-    if (canMoveTo(x + dx, z)) nx = x + dx;
-    if (canMoveTo(nx, z + dz)) nz = z + dz;
+    // Divide o deslocamento em passos curtos para evitar atravessar móveis/colunas
+    // em frames lentos e manter o deslizamento ao longo das paredes.
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) / Math.max(0.12, radius * 0.42)));
+    const stepX = dx / steps, stepZ = dz / steps;
+    for (let i = 0; i < steps; i++) {
+      if (canMoveTo(nx + stepX, nz)) nx += stepX;
+      if (canMoveTo(nx, nz + stepZ)) nz += stepZ;
+    }
     return { x: nx, z: nz };
   }
 }
