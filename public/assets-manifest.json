@@ -1,0 +1,203 @@
+{
+  "generatedBy": "tools/fetch-assets.mjs",
+  "source": "Poly Haven — https://polyhaven.com",
+  "license": "CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/)",
+  "textures": [
+    {
+      "id": "marble_tiles",
+      "path": "/textures/pbr/marble_tiles/"
+    },
+    {
+      "id": "marble_01",
+      "path": "/textures/pbr/marble_01/"
+    },
+    {
+      "id": "granite_tile",
+      "path": "/textures/pbr/granite_tile/"
+    },
+    {
+      "id": "stone_tiles",
+      "path": "/textures/pbr/stone_tiles/"
+    },
+    {
+      "id": "large_grey_tiles",
+      "path": "/textures/pbr/large_grey_tiles/"
+    },
+    {
+      "id": "wooden_panels",
+      "path": "/textures/pbr/wooden_panels/"
+    },
+    {
+      "id": "dark_wooden_planks",
+      "path": "/textures/pbr/dark_wooden_planks/"
+    },
+    {
+      "id": "wood_floor_worn",
+      "path": "/textures/pbr/wood_floor_worn/"
+    },
+    {
+      "id": "painted_plaster_wall",
+      "path": "/textures/pbr/painted_plaster_wall/"
+    },
+    {
+      "id": "worn_plaster_wall",
+      "path": "/textures/pbr/worn_plaster_wall/"
+    },
+    {
+      "id": "white_plaster_02",
+      "path": "/textures/pbr/white_plaster_02/"
+    },
+    {
+      "id": "quatrefoil_jacquard_fabric",
+      "path": "/textures/pbr/quatrefoil_jacquard_fabric/"
+    },
+    {
+      "id": "fabric_leather_01",
+      "path": "/textures/pbr/fabric_leather_01/"
+    },
+    {
+      "id": "metal_plate_02",
+      "path": "/textures/pbr/metal_plate_02/"
+    },
+    {
+      "id": "rusty_metal",
+      "path": "/textures/pbr/rusty_metal/"
+    },
+    {
+      "id": "asphalt_02",
+      "path": "/textures/pbr/asphalt_02/"
+    },
+    {
+      "id": "concrete_pavement",
+      "path": "/textures/pbr/concrete_pavement/"
+    },
+    {
+      "id": "red_brick",
+      "path": "/textures/pbr/red_brick/"
+    },
+    {
+      "id": "brick_wall_10",
+      "path": "/textures/pbr/brick_wall_10/"
+    }
+  ],
+  "hdris": [
+    {
+      "id": "abandoned_hall_01",
+      "path": "/hdri/abandoned_hall_01_1k.hdr"
+    },
+    {
+      "id": "cobblestone_street_night",
+      "path": "/hdri/cobblestone_street_night_1k.hdr"
+    },
+    {
+      "id": "qwantani_night_puresky",
+      "path": "/hdri/qwantani_night_puresky_1k.hdr"
+    },
+    {
+      "id": "wasteland_clouds",
+      "path": "/hdri/wasteland_clouds_1k.hdr"
+    }
+  ],
+  "models": [
+    {
+      "id": "GreenChair_01",
+      "path": "/models/polyhaven/GreenChair_01/GreenChair_01.gltf"
+    },
+    {
+      "id": "painted_wooden_bench",
+      "path": "/models/polyhaven/painted_wooden_bench/painted_wooden_bench.gltf"
+    },
+    {
+      "id": "vintage_grandfather_clock_01",
+      "path": "/models/polyhaven/vintage_grandfather_clock_01/vintage_grandfather_clock_01.gltf"
+    },
+    {
+      "id": "wooden_bookshelf_worn",
+      "path": "/models/polyhaven/wooden_bookshelf_worn/wooden_bookshelf_worn.gltf"
+    },
+    {
+      "id": "book_encyclopedia_set_01",
+      "path": "/models/polyhaven/book_encyclopedia_set_01/book_encyclopedia_set_01.gltf"
+    },
+    {
+      "id": "marble_bust_01",
+      "path": "/models/polyhaven/marble_bust_01/marble_bust_01.gltf"
+    },
+    {
+      "id": "potted_plant_02",
+      "path": "/models/polyhaven/potted_plant_02/potted_plant_02.gltf"
+    },
+    {
+      "id": "wooden_crate_01",
+      "path": "/models/polyhaven/wooden_crate_01/wooden_crate_01.gltf"
+    },
+    {
+      "id": "ammo_box",
+      "path": "/models/polyhaven/ammo_box/ammo_box.gltf"
+    },
+    {
+      "id": "mantel_clock_01",
+      "path": "/models/polyhaven/mantel_clock_01/mantel_clock_01.gltf"
+    },
+    {
+      "id": "desk_lamp_arm_01",
+      "path": "/models/polyhaven/desk_lamp_arm_01/desk_lamp_arm_01.gltf"
+    },
+    {
+      "id": "metal_office_desk",
+      "path": "/models/polyhaven/metal_office_desk/metal_office_desk.gltf"
+    },
+    {
+      "id": "SchoolDesk_01",
+      "path": "/models/polyhaven/SchoolDesk_01/SchoolDesk_01.gltf"
+    },
+    {
+      "id": "WoodenTable_02",
+      "path": "/models/polyhaven/WoodenTable_02/WoodenTable_02.gltf"
+    },
+    {
+      "id": "vintage_oil_lamp",
+      "path": "/models/polyhaven/vintage_oil_lamp/vintage_oil_lamp.gltf"
+    },
+    {
+      "id": "antique_ceramic_vase_01",
+      "path": "/models/polyhaven/antique_ceramic_vase_01/antique_ceramic_vase_01.gltf"
+    },
+    {
+      "id": "vintage_telephone_wall_clock",
+      "path": "/models/polyhaven/vintage_telephone_wall_clock/vintage_telephone_wall_clock.gltf"
+    },
+    {
+      "id": "folding_wooden_stool",
+      "path": "/models/polyhaven/folding_wooden_stool/folding_wooden_stool.gltf"
+    },
+    {
+      "id": "fire_hydrant",
+      "path": "/models/polyhaven/fire_hydrant/fire_hydrant.gltf"
+    },
+    {
+      "id": "metal_trash_can",
+      "path": "/models/polyhaven/metal_trash_can/metal_trash_can.gltf"
+    },
+    {
+      "id": "trashbag",
+      "path": "/models/polyhaven/trashbag/trashbag.gltf"
+    },
+    {
+      "id": "korean_public_payphone_01",
+      "path": "/models/polyhaven/korean_public_payphone_01/korean_public_payphone_01.gltf"
+    },
+    {
+      "id": "Barrel_01",
+      "path": "/models/polyhaven/Barrel_01/Barrel_01.gltf"
+    },
+    {
+      "id": "utility_box_01",
+      "path": "/models/polyhaven/utility_box_01/utility_box_01.gltf"
+    },
+    {
+      "id": "street_lamp_01",
+      "path": "/models/polyhaven/street_lamp_01/street_lamp_01.gltf"
+    }
+  ]
+}

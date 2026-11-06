@@ -387,7 +387,11 @@ export function makeTextures() {
     g.fillRect(0, 63, 44, 2); g.fillRect(84, 63, 44, 2);
   });
 
-  const medallion = canvasTex(128, 143, (g) => {
+  const medallion = canvasTex(512, 143, (g, s) => {
+    // Desenho em coordenadas de 128 unidades, ampliado em 4x para o piso:
+    // assim o medalhão de mosaico não vira um bloco pixelado de perto.
+    g.save();
+    g.scale(s / 128, s / 128);
     const cx = 64, cy = 64;
     g.fillStyle = 'rgba(18,23,21,.78)';
     g.beginPath(); g.arc(cx, cy, 60, 0, Math.PI * 2); g.fill();
@@ -411,7 +415,11 @@ export function makeTextures() {
     g.fillStyle = '#35483f'; g.fill();
     g.strokeStyle = '#d1b779'; g.lineWidth = 2; g.stroke();
     g.fillStyle = '#d1b779'; g.fillRect(cx - 1, cy - 7, 2, 14); g.fillRect(cx - 7, cy - 1, 14, 2);
+    g.restore();
   });
+  medallion.magFilter = THREE.LinearFilter;
+  medallion.minFilter = THREE.LinearMipmapLinearFilter;
+  medallion.anisotropy = 8;
 
   const lionEmblem = canvasTex(128, 157, (g) => {
     g.fillStyle = 'rgba(24,33,30,.92)';

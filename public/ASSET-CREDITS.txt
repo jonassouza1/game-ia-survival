@@ -1,32 +1,104 @@
-Third-party assets used by RPD Survival
+RPD SURVIVAL — CRÉDITOS E LICENÇAS DE ASSETS
+=================================================
 
-Service Pistol model
-- Source: Poly Haven, https://polyhaven.com/a/service_pistol
-- License: CC0 1.0 Universal
+Assets CC0 da Poly Haven
+------------------------
+Os assets abaixo foram baixados da Poly Haven (https://polyhaven.com) e são
+licenciados em CC0 1.0 Universal (domínio público):
+https://creativecommons.org/publicdomain/zero/1.0/
 
-Beretta M9 gunshot (published by SoundBible as "Barreta M9")
-- Source: SoundBible, https://soundbible.com/1906-Barreta-M9.html
-- License: Public Domain
+Texturas PBR (albedo + normal + ARM/oclusão-rugosidade-metal):
+- marble_tiles
+- marble_01
+- granite_tile
+- stone_tiles
+- large_grey_tiles
+- wooden_panels
+- dark_wooden_planks
+- wood_floor_worn
+- painted_plaster_wall
+- worn_plaster_wall
+- white_plaster_02
+- quatrefoil_jacquard_fabric
+- fabric_leather_01
+- metal_plate_02
+- rusty_metal
+- asphalt_02
+- concrete_pavement
+- red_brick
+- brick_wall_10
 
-Zombie Moan
-- Creator: Mike Koenig
-- Source: SoundBible, https://soundbible.com/1035-Zombie-Moan.html
-- License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
-- The game varies playback speed, stereo position, level, and filtered reflections.
+HDRIs (iluminação indireta, reflexos e céu):
+- abandoned_hall_01
+- cobblestone_street_night
+- qwantani_night_puresky
+- wasteland_clouds
 
-Zombie Horde
-- Creator: Mike Koenig
-- Source: SoundBible, https://soundbible.com/1833-Zombie-Horde.html
-- License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
-- The game varies playback speed, stereo position, level, and filtered reflections.
+Modelos 3D (props de cenário):
+- GreenChair_01
+- painted_wooden_bench
+- vintage_grandfather_clock_01
+- wooden_bookshelf_worn
+- book_encyclopedia_set_01
+- marble_bust_01
+- potted_plant_02
+- wooden_crate_01
+- ammo_box
+- mantel_clock_01
+- desk_lamp_arm_01
+- metal_office_desk
+- SchoolDesk_01
+- WoodenTable_02
+- vintage_oil_lamp
+- antique_ceramic_vase_01
+- vintage_telephone_wall_clock
+- folding_wooden_stool
+- fire_hydrant
+- metal_trash_can
+- trashbag
+- korean_public_payphone_01
+- Barrel_01
+- utility_box_01
+- street_lamp_01
 
+Os arquivos ficam em public/textures/pbr/, public/hdri/ e
+public/models/polyhaven/. O script tools/fetch-assets.mjs baixa novamente
+qualquer arquivo ausente; tools/write-credits.mjs regenera esta lista.
 
-Audio original criado para este projeto:
-- public/audio/pistol-reload-original.wav — efeito original de recarga de pistola, sintetizado especificamente para RPD Survival; não é extraído de Resident Evil ou de outra obra.
+Assets CC0 já presentes no projeto
+----------------------------------
+- public/models/service_pistol/ — Poly Haven, https://polyhaven.com/a/service_pistol — CC0 1.0
+- public/models/covered_car/ — Poly Haven — CC0 1.0 (atribuição em ASSET.txt)
+- public/audio/beretta-m9-shot.mp3 — SoundBible, "Barreta M9" — domínio público
+  https://soundbible.com/1906-Barreta-M9.html
 
-Recarga da pistola (revisão 2)
-- public/audio/pistol-reload-original.wav — áudio original sintetizado para este projeto, com camadas de cliques, raspagem metálica e impactos mecânicos. Não é uma gravação retirada de Resident Evil.
+Áudio com atribuição Creative Commons
+-------------------------------------
+- "Zombie Moan" — Mike Koenig, SoundBible — CC BY 3.0
+  https://soundbible.com/1035-Zombie-Moan.html
+- "Zombie Horde" — Mike Koenig, SoundBible — CC BY 3.0
+  https://soundbible.com/1833-Zombie-Horde.html
+  O jogo varia velocidade, posição estéreo, volume e filtros na reprodução.
 
-Modelos e cenário
-- Os modelos 3D e texturas existentes foram mantidos dentro de public/models e public/textures para carregamento local, sem chamadas a servidores de assets durante o jogo.
-- O carro coberto possui atribuição e licença CC0 documentadas em public/models/covered_car/ASSET.txt.
+Áudio original deste projeto
+----------------------------
+- public/audio/pistol-reload-original.wav — efeito sintetizado para o RPD
+  Survival, com cliques, raspagem metálica e impactos mecânicos. Não é uma
+  gravação retirada de Resident Evil.
+
+Modelos e texturas pré-existentes
+---------------------------------
+- public/models/leon/ (leon.obj + EMD48.png) e os modelos de prédios/carros
+  em public/models/*.glb já faziam parte do projeto original. A licença deles
+  não é reivindicada aqui; verifique a origem antes de redistribuir o jogo.
+- Os desenhos gráficos do vitral, medalhão, brasão e placas são gerados por
+  canvas no código do jogo.
+
+Como os assets são usados
+-------------------------
+- As texturas PBR são aplicadas com UV de mundo no Builder e no cenário da rua.
+- Os HDRIs são convertidos em PMREM para iluminação indireta e usados como céu.
+- Os modelos são normalizados em metros, recebem sombra e têm colisão simples.
+- Nenhum asset é baixado em tempo de execução: o jogo funciona offline.
+
+Este arquivo foi gerado por tools/write-credits.mjs.

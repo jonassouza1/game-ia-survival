@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CollisionWorld } from '../systems/collision.js';
+import { createProps } from './props.js';
+import { LightPool } from '../render/lightPool.js';
+import { pbr, solid, glow } from '../render/pbr.js';
 
 function texture(draw, repeatX = 1, repeatY = 1) {
   const canvas = document.createElement('canvas');
@@ -19,58 +22,26 @@ function texture(draw, repeatX = 1, repeatY = 1) {
   return map;
 }
 
+// UV em escala de mundo: as texturas PBR mantêm a mesma densidade em qualquer
+// face, em vez de esticar uma imagem por 90 metros de rua.
+function worldUV(geometry, tile = 2) {
+  const position = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  const uv = geometry.attributes.uv;
+  for (let i = 0; i < position.count; i++) {
+    const ax = Math.abs(normal.getX(i));
+    const ay = Math.abs(normal.getY(i));
+    const az = Math.abs(normal.getZ(i));
+    let u, v;
+    if (ay >= ax && ay >= az) { u = position.getX(i); v = position.getZ(i); }
+    else if (ax >= az) { u = position.getZ(i); v = position.getY(i); }
+    else { u = position.getX(i); v = position.getY(i); }
+    uv.setXY(i, u / tile, v / tile);
+  }
+  uv.needsUpdate = true;
+}
+
 export function buildCityStreet(group) {
-  const asphalt = texture((ctx, random) => {
-    ctx.fillStyle = '#343633'; ctx.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 640; i++) {
-      ctx.fillStyle = i % 4 ? 'rgba(150,145,128,.13)' : 'rgba(7,9,10,.42)';
-      ctx.fillRect(random() * 128, random() * 128, 1 + random() * 4, 1);
-    }
-    for (let i = 0; i < 5; i++) {
-      const x = random() * 108, y = random() * 108;
-      ctx.fillStyle = `rgba(18,19,18,${0.12 + random() * 0.16})`;
-      ctx.fillRect(x, y, 14 + random() * 30, 8 + random() * 19);
-      ctx.fillStyle = 'rgba(161,151,127,.08)';
-      ctx.fillRect(x + 2, y + 2, 10 + random() * 24, 1);
-    }
-    ctx.strokeStyle = 'rgba(10,12,12,.78)'; ctx.lineWidth = 2;
-    for (let i = 0; i < 7; i++) {
-      let x = 8 + random() * 112, y = 8 + random() * 112;
-      ctx.beginPath(); ctx.moveTo(x, y);
-      for (let j = 0; j < 5; j++) {
-        x += (random() - 0.5) * 15;
-        y += 3 + random() * 9;
-        ctx.lineTo(x, y);
-        if (j === 2) {
-          ctx.moveTo(x, y); ctx.lineTo(x + (random() - 0.5) * 20, y + 8 + random() * 8);
-          ctx.moveTo(x, y);
-        }
-      }
-      ctx.stroke();
-    }
-  }, 8, 12);
-  const brick = texture((ctx) => {
-    ctx.fillStyle = '#4d4036'; ctx.fillRect(0, 0, 128, 128);
-    for (let row = 0; row < 8; row++) for (let col = -1; col < 8; col++) {
-      const x = col * 18 + (row % 2) * 9, y = row * 16;
-      const shade = 67 + ((row * 17 + col * 23) % 29);
-      ctx.fillStyle = `rgb(${shade},${shade - 10},${shade - 18})`;
-      ctx.fillRect(x + 1, y + 1, 16, 14);
-      ctx.fillStyle = 'rgba(9,10,10,.4)'; ctx.fillRect(x + 1, y + 13, 16, 2);
-      if ((row + col) % 5 === 0) {
-        ctx.fillStyle = 'rgba(19,22,20,.36)'; ctx.fillRect(x + 5, y + 4, 8, 6);
-      }
-    }
-  }, 3, 5);
-  const concrete = texture((ctx, random) => {
-    ctx.fillStyle = '#625f54'; ctx.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 280; i++) {
-      ctx.fillStyle = i % 3 ? 'rgba(12,14,13,.15)' : 'rgba(213,198,164,.13)';
-      ctx.fillRect(random() * 128, random() * 128, 1 + random() * 3, 1);
-    }
-    ctx.strokeStyle = 'rgba(28,27,24,.4)'; ctx.lineWidth = 2;
-    ctx.strokeRect(2, 2, 60, 60); ctx.strokeRect(66, 66, 60, 60);
-  }, 5, 10);
   const rpdSign = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -86,8 +57,8 @@ export function buildCityStreet(group) {
     ctx.fillStyle = '#8d3e32'; ctx.fillRect(128, 102, 256, 3);
     const map = new THREE.CanvasTexture(canvas);
     map.colorSpace = THREE.SRGBColorSpace;
-    map.magFilter = THREE.NearestFilter;
-    map.minFilter = THREE.NearestMipmapNearestFilter;
+    map.magFilter = THREE.LinearFilter;
+    map.minFilter = THREE.LinearMipmapLinearFilter;
     return map;
   })();
   const storefrontSign = texture((ctx) => {
@@ -103,32 +74,43 @@ export function buildCityStreet(group) {
     ctx.fillStyle = 'rgba(206,187,145,.24)';
     for (let x = 18; x < 116; x += 16) ctx.fillRect(x, 24, 1, 84);
   });
-  const glass = new THREE.MeshLambertMaterial({ color: 0x343936, emissive: 0x080b0a, flatShading: true });
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x1d2a2b, roughness: 0.08, metalness: 0.35, transparent: true, opacity: 0.55,
+    envMapIntensity: 1.6, depthWrite: false,
+  });
+  glass.userData.tile = 2;
+
   const materials = {
-    asphalt: new THREE.MeshPhongMaterial({ map: asphalt, color: 0xaaa9a2, specular: 0x252a2d, shininess: 18 }),
-    brick: new THREE.MeshLambertMaterial({ map: brick, color: 0xa39a84 }),
-    brickSoot: new THREE.MeshLambertMaterial({ map: brick, color: 0x76746d }),
-    concrete: new THREE.MeshLambertMaterial({ map: concrete, color: 0x8c8677 }),
-    trim: new THREE.MeshLambertMaterial({ color: 0x3c3028, flatShading: true }),
-    wood: new THREE.MeshLambertMaterial({ color: 0x42362d, flatShading: true }),
-    rust: new THREE.MeshLambertMaterial({ color: 0x6a3827, flatShading: true }),
-    metal: new THREE.MeshLambertMaterial({ color: 0x555a58, flatShading: true }),
+    asphalt: pbr('asphalt_02', { tile: 3.2, roughness: 0.82, normalScale: 1, aoIntensity: 0.8, envMapIntensity: 1.5, color: 0xb9b7af }),
+    brick: pbr('red_brick', { tile: 2.8, roughness: 1, normalScale: 1, color: 0xa39a84 }),
+    brickSoot: pbr('brick_wall_10', { tile: 2.8, roughness: 1, normalScale: 1, color: 0x8b8880 }),
+    concrete: pbr('concrete_pavement', { tile: 2.4, roughness: 1, normalScale: 0.9, color: 0x9c968a }),
+    trim: pbr('wooden_panels', { tile: 2, roughness: 0.9, color: 0x5b4636 }),
+    wood: pbr('dark_wooden_planks', { tile: 1.7, roughness: 0.9 }),
+    rust: pbr('rusty_metal', { tile: 1.6, roughness: 1, metalness: 1 }),
+    metal: pbr('metal_plate_02', { tile: 1.4, roughness: 0.82, metalness: 1 }),
     glass,
-    sign: new THREE.MeshLambertMaterial({ color: 0x9a6e32, emissive: 0x201304 }),
-    rpdSign: new THREE.MeshLambertMaterial({ map: rpdSign }),
-    storefrontSign: new THREE.MeshLambertMaterial({ map: storefrontSign }),
-    glow: new THREE.MeshBasicMaterial({ color: 0xffc66e }),
-    puddle: new THREE.MeshBasicMaterial({ color: 0x424b4a, transparent: true, opacity: 0.6, depthWrite: false }),
+    sign: solid({ color: 0x9a6e32, roughness: 0.6, metalness: 0.3, emissive: 0x201304, emissiveIntensity: 1 }),
+    rpdSign: solid({ map: rpdSign, color: 0xffffff, roughness: 0.55, metalness: 0.2 }),
+    storefrontSign: solid({ map: storefrontSign, color: 0xffffff, roughness: 0.8, metalness: 0.1 }),
+    glow: glow(0xffc66e, 2.2),
+    puddle: new THREE.MeshPhysicalMaterial({
+      color: 0x0a1214, roughness: 0.04, metalness: 0.35, transparent: true,
+      opacity: 0.72, depthWrite: false, envMapIntensity: 2.2,
+    }),
   };
   let streetSeed = 0x2d8147;
   const streetRandom = () => ((streetSeed = (Math.imul(streetSeed, 1664525) + 1013904223) >>> 0) / 4294967296);
   const box = (w, h, d, material, x, y, z, parent = group) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    const geometry = new THREE.BoxGeometry(w, h, d);
+    worldUV(geometry, material.userData.tile ?? 2);
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
     parent.add(mesh);
     return mesh;
   };
   const occluders = [];
+  const streetLightPool = new LightPool(group, { count: 8 });
   const modelLoader = new GLTFLoader();
   const streetDoorLeaves = [];
   let streetDoorTarget = 0;
@@ -187,7 +169,7 @@ export function buildCityStreet(group) {
       box(2.64, 0.009, 0.025, materials.trim, side * 13.25, 0.136, z);
     }
   }
-  const lanePaint = new THREE.MeshBasicMaterial({ color: 0x91805b, transparent: true, opacity: 0.62 });
+  const lanePaint = solid({ color: 0x91805b, transparent: true, opacity: 0.62, roughness: 0.9 });
   for (let z = -4; z < 76; z += 8) {
     for (const x of [-0.12, 0.12]) {
       const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.008, 2.8), lanePaint);
@@ -195,7 +177,7 @@ export function buildCityStreet(group) {
       group.add(dash);
     }
   }
-  const crosswalkPaint = new THREE.MeshBasicMaterial({ color: 0xaaa593, transparent: true, opacity: 0.36 });
+  const crosswalkPaint = solid({ color: 0xaaa593, transparent: true, opacity: 0.36, roughness: 0.9 });
   for (let x = -6.5; x <= 6.5; x += 1.9) {
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.008, 0.12), crosswalkPaint);
     stripe.position.set(x, 0.004, -4.1);
@@ -217,20 +199,37 @@ export function buildCityStreet(group) {
         group.add(sign);
         box(0.42, 0.16, 3.1, materials.rust, side * 10.8, 2.85, z);
         box(0.34, 0.12, 2.6, materials.wood, side * 10.52, 2.62, z);
-        const lamp = new THREE.PointLight(0xffa65e, index === 0 ? 3.5 : 0, 6, 1.8);
-        lamp.position.set(side * 10.45, 3.3, z);
-        group.add(lamp);
-        if (lamp.intensity > 0) flickeringStoreLights.push({ light: lamp, base: lamp.intensity, seed: z + side * 11 });
+        const intensity = index === 0 ? 22 : 0;
+        const fixture = streetLightPool.add({
+          position: new THREE.Vector3(side * 10.45, 3.3, z),
+          color: 0xffa65e, intensity, distance: 8, decay: 2,
+        });
+        if (intensity > 0) flickeringStoreLights.push({ fixture, base: intensity, seed: z + side * 11 });
       }
     }
   }
 
-  const alleyWall = new THREE.MeshLambertMaterial({ color: 0x81776a, map: brick, flatShading: true });
+  // Skyline real: reutiliza os prédios CC0 em escala maior no fundo da rua,
+  // em vez de silhuetas pintadas num plano.
+  for (const [index, [x, z, height]] of [
+    [-44, 96, 26], [-27, 92, 33], [-10, 99, 23],
+    [8, 94, 36], [26, 97, 28], [44, 93, 22],
+  ].entries()) {
+    const asset = ['large_building_a', 'large_building_b', 'big_building'][index % 3];
+    loadStreetModel(`/models/${asset}/${asset}.glb`, {
+      height,
+      position: { x, y: 0, z },
+      rotationY: Math.PI,
+      tint: 0.18,
+    });
+  }
+
+  const alleyWall = pbr('red_brick', { tile: 2.6, roughness: 1, normalScale: 1, color: 0x9a8f7e });
   const alleyWallVariants = [alleyWall, materials.brickSoot, materials.concrete];
-  const alleyMetal = new THREE.MeshLambertMaterial({ color: 0x414239, flatShading: true });
-  const garbageBag = new THREE.MeshLambertMaterial({ color: 0x151817, flatShading: true });
+  const alleyMetal = pbr('metal_plate_02', { tile: 1.4, roughness: 0.85, metalness: 1, color: 0x6f736c });
+  const garbageBag = solid({ color: 0x111413, roughness: 0.55, metalness: 0.05 });
   const alleyPaving = [0x948f82, 0x706d65, 0x4c4941].map((color) =>
-    new THREE.MeshLambertMaterial({ color, map: asphalt, flatShading: true }));
+    pbr('concrete_pavement', { tile: 2, color, roughness: 1, normalScale: 0.8 }));
   for (const side of [-1, 1]) {
     for (const [index, z] of [8, 22, 36, 50, 64, 78].entries()) {
       const alleyFace = alleyWallVariants[(index + (side > 0 ? 1 : 0)) % alleyWallVariants.length];
@@ -274,10 +273,12 @@ export function buildCityStreet(group) {
         const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.085, 6, 4), bulbMaterial);
         bulb.position.copy(lampPosition);
         group.add(bulb);
-        const light = new THREE.PointLight(0xffae68, lampIndex === 0 ? 5.2 : 1.8, lampIndex === 0 ? 9 : 5, 2);
-        light.position.copy(lampPosition);
-        group.add(light);
-        alleyLights.push({ light, bulb: bulbMaterial, base: lampIndex === 0 ? 5.2 : 1.8, phase: streetRandom() * 8 });
+        const intensity = lampIndex === 0 ? 20 : 6;
+        const fixture = streetLightPool.add({
+          position: lampPosition, color: 0xffae68, intensity,
+          distance: lampIndex === 0 ? 11 : 7, decay: 2,
+        });
+        alleyLights.push({ fixture, bulb: bulbMaterial, base: intensity, phase: streetRandom() * 8 });
       }
       if ((index + (side > 0 ? 1 : 0)) % 3 !== 0) {
         const tippedBin = new THREE.Group();
@@ -411,7 +412,7 @@ export function buildCityStreet(group) {
   hospitalSignContext.fillText('HOSPITAL', 256, 104);
   const hospitalSignTexture = new THREE.CanvasTexture(hospitalSignCanvas);
   hospitalSignTexture.colorSpace = THREE.SRGBColorSpace;
-  const hospitalSignMaterial = new THREE.MeshBasicMaterial({ map: hospitalSignTexture, color: 0x777a76 });
+  const hospitalSignMaterial = solid({ map: hospitalSignTexture, color: 0xffffff, roughness: 0.55, metalness: 0.2, emissive: 0x2a2f31, emissiveIntensity: 0.4 });
   box(4.5, 1.32, 0.16, materials.trim, 0, 13.2, 67.55);
   const hospitalSign = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.05), hospitalSignMaterial);
   hospitalSign.position.set(0, 13.2, 67.45);
@@ -424,12 +425,9 @@ export function buildCityStreet(group) {
   skylineCanvas.width = 1024;
   skylineCanvas.height = 384;
   const skylineContext = skylineCanvas.getContext('2d');
-  const skyGradient = skylineContext.createLinearGradient(0, 0, 0, 384);
-  skyGradient.addColorStop(0, '#03070b');
-  skyGradient.addColorStop(0.62, '#080d11');
-  skyGradient.addColorStop(1, '#111615');
-  skylineContext.fillStyle = skyGradient;
-  skylineContext.fillRect(0, 0, 1024, 384);
+  // O céu do canvas fica transparente: o HDRI da tempestade aparece atrás
+  // e as silhuetas de prédios continuam recortando o horizonte.
+  skylineContext.clearRect(0, 0, 1024, 384);
   skylineContext.fillStyle = 'rgba(70, 82, 91, 0.035)';
   skylineContext.beginPath();
   skylineContext.ellipse(520, 195, 370, 45, 0, 0, Math.PI * 2);
@@ -486,10 +484,14 @@ export function buildCityStreet(group) {
   skylineTexture.colorSpace = THREE.SRGBColorSpace;
   const skyline = new THREE.Mesh(
     new THREE.PlaneGeometry(76, 28),
-    new THREE.MeshBasicMaterial({ map: skylineTexture, fog: false, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({
+      map: skylineTexture, fog: false, side: THREE.DoubleSide,
+      transparent: true, depthWrite: false,
+    }),
   );
   skyline.position.set(0, 14, 96);
   skyline.rotation.y = Math.PI;
+  skyline.visible = false;
   group.add(skyline);
 
   const createSideCityTexture = (seed) => {
@@ -499,13 +501,7 @@ export function buildCityStreet(group) {
     const ctx = canvas.getContext('2d');
     let sideSeed = seed;
     const random = () => ((sideSeed = (Math.imul(sideSeed, 1664525) + 1013904223) >>> 0) / 4294967296);
-    const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    sky.addColorStop(0, '#03070b');
-    sky.addColorStop(0.22, '#080e13');
-    sky.addColorStop(0.58, '#11181b');
-    sky.addColorStop(1, '#1d211f');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     for (const layer of [
       { base: 310, color: '#0a1013', width: 42, maxHeight: 100, windowAlpha: 0.06 },
@@ -566,10 +562,14 @@ export function buildCityStreet(group) {
   };
   const urbanHorizon = new THREE.Mesh(
     new THREE.PlaneGeometry(144, 54),
-    new THREE.MeshBasicMaterial({ map: createSideCityTexture(0x38c25), fog: false, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({
+      map: createSideCityTexture(0x38c25), fog: false, side: THREE.DoubleSide,
+      transparent: true, depthWrite: false,
+    }),
   );
   urbanHorizon.position.set(0, 27, 88);
   urbanHorizon.rotation.y = Math.PI;
+  urbanHorizon.visible = false;
   group.add(urbanHorizon);
 
   box(18, 8.5, 0.7, materials.brickSoot, 0, 4.2, -10.15);
@@ -593,10 +593,11 @@ export function buildCityStreet(group) {
     const lampX = side * 2.85;
     box(0.42, 0.12, 0.28, materials.metal, lampX, 4.0, -9.67);
     box(0.24, 0.08, 0.22, materials.glow, lampX, 3.91, -9.52);
-    const lamp = new THREE.PointLight(0xffc27a, 4.2, 8, 1.8);
-    lamp.position.set(lampX, 3.94, -9.45);
-    group.add(lamp);
-    flickeringStoreLights.push({ light: lamp, base: 4.2, seed: side * 2.5 });
+    const entryFixture = streetLightPool.add({
+      position: new THREE.Vector3(lampX, 3.94, -9.45),
+      color: 0xffc27a, intensity: 20, distance: 9, decay: 2,
+    });
+    flickeringStoreLights.push({ fixture: entryFixture, base: 20, seed: side * 2.5 });
   }
   for (const [step, width] of [[0, 5.3], [1, 6.2], [2, 7.1]]) {
     box(width, 0.14, 0.62, materials.concrete, 0, 0.09 + step * 0.14, -8.7 + step * 0.62);
@@ -624,9 +625,9 @@ export function buildCityStreet(group) {
   rpdPlaque.receiveShadow = true;
   group.add(rpdPlaque);
   box(2.68, 3.22, 0.04, new THREE.MeshBasicMaterial({ color: 0x010203 }), 0, 1.61, -9.39);
-  const exteriorDoorPanel = new THREE.MeshLambertMaterial({ color: 0x263b32, flatShading: true });
-  const exteriorDoorTrim = new THREE.MeshLambertMaterial({ color: 0x796044, flatShading: true });
-  const exteriorBrass = new THREE.MeshLambertMaterial({ color: 0x8c7041, flatShading: true });
+  const exteriorDoorPanel = pbr('wooden_panels', { tile: 1.3, color: 0x5e7c6c, roughness: 0.9, normalScale: 0.7 });
+  const exteriorDoorTrim = pbr('wooden_panels', { tile: 1.0, color: 0xb08a5e, roughness: 0.85, normalScale: 0.7 });
+  const exteriorBrass = solid({ color: 0x8c7041, roughness: 0.3, metalness: 0.95, tile: 1 });
   for (const side of [-1, 1]) {
     const leafWidth = 1.18;
     const hinge = new THREE.Group();
@@ -650,7 +651,7 @@ export function buildCityStreet(group) {
   const car = new THREE.Group();
   car.position.set(-3.2, 0.12, 9.3);
   car.rotation.y = -0.52;
-  const bodyPaint = new THREE.MeshLambertMaterial({ color: 0x46534f, emissive: 0x080a09, flatShading: true });
+  const bodyPaint = solid({ color: 0x46534f, roughness: 0.55, metalness: 0.55, tile: 2, emissive: 0x080a09 });
   const bodyShape = new THREE.Shape();
   bodyShape.moveTo(-2.15, 0.42); bodyShape.lineTo(2.1, 0.42); bodyShape.lineTo(2.18, 0.73);
   bodyShape.lineTo(1.72, 0.97); bodyShape.lineTo(-1.42, 0.97); bodyShape.lineTo(-1.9, 0.8); bodyShape.closePath();
@@ -663,7 +664,7 @@ export function buildCityStreet(group) {
   cabinShape.lineTo(0.77, 1.84); cabinShape.lineTo(1.42, 0.93); cabinShape.closePath();
   const cabinGeo = new THREE.ExtrudeGeometry(cabinShape, { depth: 1.58, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.04, bevelSegments: 1 });
   cabinGeo.translate(0, 0, -0.79); cabinGeo.rotateY(Math.PI / 2);
-  const cabin = new THREE.Mesh(cabinGeo, new THREE.MeshLambertMaterial({ color: 0x313a39, flatShading: true }));
+  const cabin = new THREE.Mesh(cabinGeo, solid({ color: 0x313a39, roughness: 0.15, metalness: 0.4, tile: 2 }));
   cabin.castShadow = true; car.add(cabin);
   for (const side of [-1, 1]) {
     for (const z of [-1.42, 1.42]) {
@@ -780,7 +781,7 @@ export function buildCityStreet(group) {
   box(0.48, 0.11, 0.4, materials.rust, 5.9, 0.12, 31.7);
   box(0.68, 0.12, 0.32, materials.metal, 7.8, 0.1, 28.5);
 
-  const glassShards = new THREE.MeshLambertMaterial({ color: 0x879a98, emissive: 0x11191a, flatShading: true });
+  const glassShards = solid({ color: 0x879a98, roughness: 0.15, metalness: 0.35, emissive: 0x11191a });
   for (let i = 0; i < 32; i++) {
     const x = -3.2 + (streetRandom() - 0.5) * 5.2;
     const z = 9.3 + (streetRandom() - 0.5) * 5.4;
@@ -797,7 +798,7 @@ export function buildCityStreet(group) {
   }
   const detachedWheel = new THREE.Mesh(
     new THREE.CylinderGeometry(0.36, 0.36, 0.2, 10),
-    new THREE.MeshLambertMaterial({ color: 0x222321, flatShading: true }),
+    solid({ color: 0x222321, roughness: 0.9, metalness: 0.1 }),
   );
   detachedWheel.rotation.z = Math.PI / 2;
   detachedWheel.rotation.x = 0.26;
@@ -854,6 +855,7 @@ export function buildCityStreet(group) {
   scorchGround.position.set(0, 0.018, 0.12);
   fire.add(scorchGround);
   group.add(fire);
+  fire.userData.noAO = true; // fogo/fumaça não devem virar oclusores do GTAO
   const fireLight = new THREE.PointLight(0xff6a24, 42, 14, 1.65);
   fireLight.position.set(0, 1.5, -0.35);
   fire.add(fireLight);
@@ -937,7 +939,7 @@ export function buildCityStreet(group) {
       ]);
       group.add(new THREE.Mesh(
         new THREE.TubeGeometry(wire, 12, 0.018, 4, false),
-        new THREE.MeshLambertMaterial({ color: 0x252724 }),
+        solid({ color: 0x252724, roughness: 0.55, metalness: 0.6 }),
       ));
     }
   }
@@ -948,18 +950,20 @@ export function buildCityStreet(group) {
         height: 7.4, position: { x, y: 0, z }, rotationY: side < 0 ? Math.PI : 0, tint: 0.68,
       });
       const lit = (index + (side < 0 ? 0 : 1)) % 3 !== 1;
-      const lamp = new THREE.PointLight(0xffc27a, lit ? 16 : 0, 15, 1.7);
       const fixtureX = x + side * 0.34;
+      const lampPosition = new THREE.Vector3(fixtureX, 6.92, z);
+      const fixture = streetLightPool.add({
+        position: lampPosition, color: 0xffc27a, intensity: lit ? 55 : 0,
+        distance: 18, decay: 2,
+      });
       box(0.7, 0.12, 0.34, materials.metal, fixtureX, 6.98, z);
-      lamp.position.set(fixtureX, 6.92, z);
-      group.add(lamp);
       const bulb = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 6, 4),
-        new THREE.MeshBasicMaterial({ color: lit ? 0xffc27a : 0x38332d }),
+        new THREE.SphereGeometry(0.12, 8, 6),
+        glow(lit ? 0xffc27a : 0x38332d, lit ? 4 : 0.15),
       );
-      bulb.position.copy(lamp.position);
+      bulb.position.copy(lampPosition);
       group.add(bulb);
-      if (lit) streetLights.push({ light: lamp, bulb: bulb.material, base: 16, phase: streetRandom() * 8 });
+      if (lit) streetLights.push({ fixture, bulb: bulb.material, base: 55, phase: streetRandom() * 8 });
     }
   }
 
@@ -1024,12 +1028,69 @@ export function buildCityStreet(group) {
     },
   };
   props.push(streetDoorItem);
-  const hemi = new THREE.HemisphereLight(0x748399, 0x15181c, 0.34);
+
+  // Props escaneados (CC0) dão escala e imperfeição à calçada: telefone
+  // público, hidrante, lata de lixo, banco, barril e caixotes.
+  const streetProps = createProps({ parent: group, collisions, anisotropy: 8 });
+  const sidewalkY = 0.14;
+  streetProps.place('korean_public_payphone_01', {
+    position: [12.55, sidewalkY, 6.2], height: 2.05, rotationY: -Math.PI / 2,
+    collider: { w: 0.75, d: 0.75, h: 2.15 },
+  });
+  streetProps.place('fire_hydrant', {
+    position: [12.5, sidewalkY, 12.6], height: 0.72,
+    collider: { w: 0.5, d: 0.5, h: 0.85 },
+  });
+  streetProps.place('metal_trash_can', {
+    position: [-12.55, sidewalkY, 12.5], height: 1.0,
+    collider: { w: 0.65, d: 0.65, h: 1.1 },
+  });
+  streetProps.place('trashbag', {
+    position: [-12.95, sidewalkY, 13.5], height: 0.55,
+  });
+  streetProps.place('painted_wooden_bench', {
+    position: [-12.6, sidewalkY, 24.0], height: 0.95, rotationY: Math.PI / 2,
+    collider: { w: 0.6, d: 1.5, h: 1.0 },
+  });
+  streetProps.place('Barrel_01', {
+    position: [13.5, sidewalkY, 24.6], height: 0.95,
+    collider: { w: 0.8, d: 0.8, h: 1.05 },
+  });
+  streetProps.place('utility_box_01', {
+    position: [12.55, sidewalkY, 36.2], height: 1.35, rotationY: -Math.PI / 2,
+    collider: { w: 0.7, d: 1.0, h: 1.45 },
+  });
+  streetProps.place('wooden_crate_01', {
+    position: [-13.0, sidewalkY, 52.0], height: 0.7, rotationY: 0.3,
+    collider: { w: 0.85, d: 0.8, h: 0.8 },
+  });
+  streetProps.place('fire_hydrant', {
+    position: [-12.5, sidewalkY, 45.5], height: 0.72,
+    collider: { w: 0.5, d: 0.5, h: 0.85 },
+  });
+  streetProps.place('metal_trash_can', {
+    position: [12.9, sidewalkY, 62.0], height: 1.0,
+    collider: { w: 0.65, d: 0.65, h: 1.1 },
+  });
+
+  const hemi = new THREE.HemisphereLight(0x748399, 0x15181c, 0.07);
   group.add(hemi);
-  const ambient = new THREE.AmbientLight(0x68758a, 0.16);
+  const ambient = new THREE.AmbientLight(0x68758a, 0.02);
   group.add(ambient);
-  const moon = new THREE.DirectionalLight(0x7e8ea9, 0.72);
-  moon.position.set(-5, 12, 5); moon.castShadow = true; group.add(moon);
+  const moon = new THREE.DirectionalLight(0x8fa4c4, 0.7);
+  moon.position.set(-24, 30, 12);
+  moon.target.position.set(0, 0, 36);
+  moon.castShadow = true;
+  moon.shadow.mapSize.set(2048, 2048);
+  moon.shadow.camera.left = -32;
+  moon.shadow.camera.right = 32;
+  moon.shadow.camera.top = 46;
+  moon.shadow.camera.bottom = -46;
+  moon.shadow.camera.near = 1;
+  moon.shadow.camera.far = 110;
+  moon.shadow.bias = -0.0006;
+  moon.shadow.normalBias = 0.05;
+  group.add(moon, moon.target);
   const stars = new Float32Array(180);
   for (let i = 0; i < stars.length; i += 3) {
     stars[i] = (streetRandom() - 0.5) * 55;
@@ -1042,7 +1103,7 @@ export function buildCityStreet(group) {
   );
   starField.visible = false;
   group.add(starField);
-  const rainCount = 850;
+  const rainCount = 1200;
   const rainPositions = new Float32Array(rainCount * 6);
   const rainSeeds = new Float32Array(rainCount);
   const rainBaseY = new Float32Array(rainCount);
@@ -1058,7 +1119,7 @@ export function buildCityStreet(group) {
     rainPositions[offset + 1] = y;
     rainPositions[offset + 2] = -9 + streetRandom() * 92;
     rainPositions[offset + 3] = x + 0.22;
-    rainPositions[offset + 4] = y - 0.72;
+    rainPositions[offset + 4] = y - 0.55;
     rainPositions[offset + 5] = rainPositions[offset + 2];
   }
   const rainGeometry = new THREE.BufferGeometry();
@@ -1074,7 +1135,7 @@ export function buildCityStreet(group) {
       rainFallSpeed[vertex] = rainSpeeds[drop];
       rainPhase[vertex] = rainSeeds[drop];
       rainStartY[vertex] = rainBaseY[drop];
-      rainTrailOffset[vertex] = endpoint * 0.72;
+      rainTrailOffset[vertex] = endpoint * 0.55;
     }
   }
   rainGeometry.setAttribute('fallSpeed', new THREE.Float32BufferAttribute(rainFallSpeed, 1));
@@ -1103,7 +1164,7 @@ export function buildCityStreet(group) {
     fragmentShader: `
       varying float vFade;
       void main() {
-        gl_FragColor = vec4(0.72, 0.8, 0.84, 0.48 * vFade);
+        gl_FragColor = vec4(0.62, 0.7, 0.78, 0.3 * vFade);
       }
     `,
   });
@@ -1152,6 +1213,7 @@ export function buildCityStreet(group) {
   const stormLight = new THREE.PointLight(0x9db6d2, 0, 100, 1.2);
   stormLight.position.set(-7, 22, 38);
   group.add(stormLight);
+  const poolCamera = new THREE.Vector3(0, 2, 30);
   let flashTimer = 4 + streetRandom() * 8;
   let flashStrength = 0;
   let elapsed = 0;
@@ -1161,7 +1223,7 @@ export function buildCityStreet(group) {
     collisions,
     occluders,
     props,
-    update(timeOrDelta = 0, dt = timeOrDelta) {
+    update(timeOrDelta = 0, dt = timeOrDelta, cameraPosition = null) {
       elapsed += dt;
       rainMaterial.uniforms.time.value = elapsed;
       flashTimer -= dt;
@@ -1180,7 +1242,7 @@ export function buildCityStreet(group) {
         rainPositions[offset] += windDrift - previousDrift;
         rainPositions[offset + 1] = cycleY;
         rainPositions[offset + 3] = rainPositions[offset] + 0.22;
-        rainPositions[offset + 4] = cycleY - 0.72;
+        rainPositions[offset + 4] = cycleY - 0.55;
         let hitDumpster = false;
         if (oldY > 1.55 && rainPositions[offset + 1] <= 1.55) {
           for (const zone of dumpsterImpactZones) {
@@ -1249,23 +1311,25 @@ export function buildCityStreet(group) {
         );
         ember.visible = progress < 0.82;
       });
-      streetLights.forEach(({ light, bulb, base, phase }) => {
+      streetLights.forEach(({ fixture, bulb, base, phase }) => {
         const outage = Math.sin(elapsed * 0.8 + phase) > 0.985 ? 0 : 1;
         const flicker = 0.82 + 0.18 * Math.sin(elapsed * 9 + phase);
-        light.intensity = base * outage * flicker;
-        bulb.color.setHex(outage ? 0xffc27a : 0x38332d);
+        fixture.intensity = base * outage * flicker;
+        if (bulb.emissive) bulb.emissive.setHex(outage ? 0xffc27a : 0x3a332a);
+        else bulb.color.setHex(outage ? 0xffc27a : 0x38332d);
       });
-      flickeringStoreLights.forEach(({ light, base, seed }) => {
-        light.intensity = base * (0.72 + 0.28 * Math.sin(elapsed * 6 + seed))
+      flickeringStoreLights.forEach(({ fixture, base, seed }) => {
+        fixture.intensity = base * (0.72 + 0.28 * Math.sin(elapsed * 6 + seed))
           * (Math.sin(elapsed * 0.7 + seed) > 0.98 ? 0 : 1);
       });
-      alleyLights.forEach(({ light, bulb, base, phase }) => {
+      alleyLights.forEach(({ fixture, bulb, base, phase }) => {
         const outage = Math.sin(elapsed * 1.9 + phase) > 0.96
           || Math.sin(elapsed * 0.37 + phase) > 0.985 ? 0 : 1;
         const flicker = 0.65 + 0.35 * Math.sin(elapsed * 11 + phase);
-        light.intensity = base * outage * flicker;
+        fixture.intensity = base * outage * flicker;
         bulb.color.setHex(outage ? 0xffc27a : 0x38332d);
       });
+      streetLightPool.update(cameraPosition ?? poolCamera);
     },
     resetEntrance() {
       streetDoorTarget = 0;

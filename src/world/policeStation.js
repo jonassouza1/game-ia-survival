@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { Builder } from './builder.js';
 import { makeTextures } from './textures.js';
+import { createProps } from './props.js';
+import { LightPool } from '../render/lightPool.js';
+import { pbr, solid, glow } from '../render/pbr.js';
 import { CollisionWorld } from '../systems/collision.js';
 
 // Dimensões do saguão (metros). Norte = -z (escadas/estátua), Sul = +z (portas de entrada).
@@ -12,42 +16,60 @@ export function buildPoliceStation(scene) {
   const W = x1 - x0, D = z1 - z0, cz = (z0 + z1) / 2;
 
   const T = makeTextures();
-  const mk = (map, tile, color = 0xffffff, o = {}) => {
-    // Diffuse sem brilho ou bump: superfícies foscas e pintadas como cenário pré-renderizado.
-    const m = new THREE.MeshLambertMaterial({ map, color, ...o });
-    m.userData.tile = tile;
-    return m;
-  };
-  const basic = (o, tile = 2) => { const m = new THREE.MeshBasicMaterial(o); m.userData.tile = tile; return m; };
+  RectAreaLightUniformsLib.init();
+
+  // Os desenhos gráficos (vitral, medalhão, brasão) continuam procedurais;
+  // as superfícies reais usam os mapas PBR CC0 baixados da Poly Haven.
+  const glass = new THREE.MeshPhysicalMaterial({
+    map: T.glass, color: 0x93a8bb, roughness: 0.12, metalness: 0,
+    transparent: true, opacity: 0.62, depthWrite: false, envMapIntensity: 1.6,
+    side: THREE.DoubleSide,
+  });
+  glass.userData.tile = 3;
+  const stainedGlass = new THREE.MeshStandardMaterial({
+    map: T.stainedGlass, emissiveMap: T.stainedGlass, emissive: 0x1c2832,
+    emissiveIntensity: 0.65, roughness: 0.32, metalness: 0.05,
+    envMapIntensity: 0.7, side: THREE.DoubleSide,
+  });
+  stainedGlass.userData.tile = 2;
+
   const M = {
-    marble: mk(T.marble, 4),
-    floor: mk(T.floor, 4),
-    panel: mk(T.wainscot, 3),
-    wallStone: mk(T.wallStone, 3.8),
-    plasterLt: mk(T.plaster, 3, 0xe4dcc8),
-    recess: mk(T.plaster, 3, 0x6d675a),
-    wood: mk(T.wood, 2),
-    woodLt: mk(T.woodLt, 2),
-    upholstery: mk(T.upholstery, 1.5),
-    trim: mk(T.wood, 2, 0x9b7a62),
-    dark: basic({ color: 0x020303, side: THREE.DoubleSide }),
-    stone: mk(T.stone, 3, 0xffffff, { flatShading: true }),
-    statue: mk(T.statuary, 2.4, 0xd1cebd, { flatShading: true }),
-    lion: mk(T.statuary, 2, 0xc3b99f, { flatShading: true }),
-    greenDoor: mk(T.greenDoor, 2.4),
-    ceil: mk(T.ceiling, 4),
-    carpet: mk(T.carpet, 3),
-    stairCarpet: mk(T.stairCarpet, 0.8),
-    metal: mk(T.metal, 2),
-    brass: mk(null, 2, 0xa88d4e),
-    black: mk(null, 2, 0x1d1e1b),
-    paper: mk(null, 2, 0xc2b99c),
-    green: mk(null, 2, 0x4f8f3e, { flatShading: true }),
-    olive: mk(null, 2, 0x5f673b),
-    screen: basic({ color: 0x86d0a4 }),
-    lamp: basic({ color: 0xffd9a0 }),
-    glass: basic({ map: T.glass, color: 0xffffff }, 3),
-    stainedGlass: basic({ map: T.stainedGlass, color: 0xffffff }, 2),
+    marble: pbr('marble_tiles', { tile: 3.6, roughness: 0.62, normalScale: 0.45, aoIntensity: 0.6 }),
+    floor: pbr('marble_01', {
+      tile: 4.5, color: 0xaca393, roughness: 0.45, normalScale: 0.1,
+      aoIntensity: 0.25, envMapIntensity: 1.35,
+    }),
+    panel: pbr('wooden_panels', { tile: 3.2, color: 0x6f5a4a, roughness: 1, normalScale: 0.8 }),
+    wallStone: pbr('large_grey_tiles', {
+      tile: 8.5, color: 0xb0aca0, roughness: 0.92, normalScale: 0.3, aoIntensity: 0.45,
+    }),
+    wallPlaster: pbr('painted_plaster_wall', {
+      tile: 3.6, color: 0xbfb6a3, roughness: 1, normalScale: 0.4,
+    }),
+    plasterLt: pbr('painted_plaster_wall', { tile: 3, color: 0xd8cfba, roughness: 1, normalScale: 0.7 }),
+    recess: pbr('worn_plaster_wall', { tile: 3, color: 0x827c6d, roughness: 1, normalScale: 0.9 }),
+    wood: pbr('dark_wooden_planks', { tile: 2, roughness: 0.85, normalScale: 0.9 }),
+    woodLt: pbr('wood_floor_worn', { tile: 2, color: 0xcbb79c, roughness: 0.8, normalScale: 0.8 }),
+    upholstery: pbr('fabric_leather_01', { tile: 1.5, color: 0x7f8f76, roughness: 0.9, normalScale: 0.7 }),
+    trim: pbr('wooden_panels', { tile: 2, color: 0x8a6f52, roughness: 0.85, normalScale: 0.8 }),
+    dark: solid({ color: 0x040505, roughness: 0.9 }),
+    stone: pbr('granite_tile', { tile: 3, color: 0xc8c4b8, roughness: 0.9, normalScale: 0.7 }),
+    statue: pbr('marble_01', { tile: 2.4, color: 0xd9d3c5, roughness: 0.72, normalScale: 0.5 }),
+    lion: pbr('marble_01', { tile: 2, color: 0xc9c1ad, roughness: 0.8, normalScale: 0.6 }),
+    greenDoor: pbr('wooden_panels', { tile: 2.4, color: 0x96af9c, roughness: 0.9, normalScale: 0.8 }),
+    ceil: pbr('white_plaster_02', { tile: 4, color: 0xc9c1b0, roughness: 1, normalScale: 0.6 }),
+    carpet: pbr('quatrefoil_jacquard_fabric', { tile: 3, color: 0xb06153, roughness: 1, normalScale: 0.7 }),
+    stairCarpet: pbr('quatrefoil_jacquard_fabric', { tile: 0.8, color: 0xa9554a, roughness: 1, normalScale: 0.7 }),
+    metal: pbr('metal_plate_02', { tile: 2, roughness: 0.75, normalScale: 0.8 }),
+    brass: solid({ color: 0xb08d50, roughness: 0.28, metalness: 0.95 }),
+    black: solid({ color: 0x141512, roughness: 0.5, metalness: 0.4 }),
+    paper: solid({ color: 0xc9c0a6, roughness: 0.95 }),
+    green: solid({ color: 0x4f8f3e, roughness: 0.85, flatShading: true }),
+    olive: solid({ color: 0x5f673b, roughness: 0.9 }),
+    screen: glow(0x74c79a, 0.7, { tile: 2 }),
+    lamp: glow(0xffd9a0, 2.2, { tile: 2 }),
+    glass,
+    stainedGlass,
   };
 
   const b = new Builder();
@@ -59,7 +81,9 @@ export function buildPoliceStation(scene) {
   const animatedDoors = [];
   let pendingDoorTransition = null;
   let northDoorItem = null;
-  let flickerLight = null;
+  let flickerFixture = null;
+  const decor = createProps({ parent: scene, collisions: col, anisotropy: 8 });
+  const sconces = new LightPool(scene, { count: 5 });
   const D0 = { cam: false };               // decoração: câmera ignora
   const DN = { cam: false, cast: false };  // decoração sem sombra
   const box = (...a) => b.box(...a);
@@ -104,7 +128,7 @@ export function buildPoliceStation(scene) {
     b.geo(geometry, mat, x, baseY + h / 2, z, D0);
   };
 
-  const planter = (x, z, baseY = 0, scale = 1) => {
+  const planter = (x, z, baseY = 0, scale = 1, foliage = true) => {
     octagonalTier(0.66 * scale, 0.66 * scale, 0.48 * scale, M.stone, x, baseY, z, 0.2);
     octagonalTier(0.74 * scale, 0.74 * scale, 0.09 * scale, M.trim, x, baseY + 0.43 * scale, z, 0.2);
     octagonalTier(0.48 * scale, 0.48 * scale, 0.04 * scale, M.black, x, baseY + 0.51 * scale, z, 0.18);
@@ -112,7 +136,7 @@ export function buildPoliceStation(scene) {
       x, baseY + 0.25 * scale, z + 0.335 * scale, DN, 0.025 * scale);
     softBox(0.17 * scale, 0.20 * scale, 0.03 * scale, M.stone,
       x, baseY + 0.25 * scale, z + 0.35 * scale, DN, 0.018 * scale);
-    for (let i = 0; i < 9; i++) {
+    if (foliage) for (let i = 0; i < 9; i++) {
       const a = i * Math.PI * 2 / 9;
       const leaf = new THREE.Shape();
       leaf.moveTo(0, 0);
@@ -127,26 +151,19 @@ export function buildPoliceStation(scene) {
     col.addBox(x, z, 0.72 * scale, 0.72 * scale, { y0: baseY, y1: baseY + 1.3 * scale });
   };
 
-  const supplyCrate = (x, z, baseY = 0, scale = 1) => {
-    const w = 0.96 * scale, h = 0.76 * scale, d = 0.82 * scale;
-    box(w, h, d, M.wood, x, baseY + h / 2, z, D0);
-    for (const sx of [-1, 1]) {
-      box(0.08 * scale, h + 0.04 * scale, d + 0.04 * scale, M.trim,
-        x + sx * (w / 2 - 0.08 * scale), baseY + h / 2, z, D0);
-      box(w + 0.03 * scale, 0.075 * scale, 0.08 * scale, M.metal,
-        x, baseY + h * 0.27, z + sx * (d / 2 + 0.015 * scale), D0);
-    }
-    box(w + 0.06 * scale, 0.08 * scale, d + 0.06 * scale, M.woodLt,
-      x, baseY + h + 0.025 * scale, z, D0);
-    box(0.26 * scale, 0.14 * scale, 0.035 * scale, M.paper,
-      x, baseY + h * 0.62, z + d / 2 + 0.02 * scale, D0);
-    col.addBox(x, z, w + 0.12 * scale, d + 0.12 * scale,
-      { y0: baseY, y1: baseY + h + 0.5 * scale });
-  };
-
   // ───────────────────────── Casca: piso, teto, paredes ─────────────────────────
   box(W, 0.5, D, M.floor, 0, -0.25, cz);
   box(W, 0.5, D, M.ceil, 0, h + 0.25, cz);
+
+  // Juntas finas de assentamento: transformam o mármore contínuo em lajes
+  // grandes de 2,4 m, com a escala de um piso de prédio público dos anos 1930.
+  const grout = solid({ color: 0x5a5348, roughness: 0.92 });
+  for (let gx = x0 + 1.2; gx < x1; gx += 2.4) {
+    box(0.012, 0.006, 38.2, grout, gx, 0.004, 3.1, { cam: false, cast: false });
+  }
+  for (let gz = z0 + 1.2; gz < 22.8; gz += 2.4) {
+    box(W, 0.006, 0.012, grout, 0, 0.004, gz, { cam: false, cast: false });
+  }
 
   // Vigas do teto (caixotões) e luminárias de teto
   for (const z of [-12, -6, 0, 6, 12, 18]) box(W, 0.45, 0.5, M.wood, 0, h - 0.22, z, D0);
@@ -157,7 +174,7 @@ export function buildPoliceStation(scene) {
   }
 
   // Pendentes baixos e de metal envelhecido acrescentam uma fonte de luz legível no salão alto.
-  for (const z of [-6, 5, 17]) {
+  for (const [pendantIndex, z] of [-6, 5, 17].entries()) {
     const chain = new THREE.CatmullRomCurve3([
       new THREE.Vector3(0, h - 0.8, z),
       new THREE.Vector3(0, h - 1.08, z),
@@ -180,9 +197,19 @@ export function buildPoliceStation(scene) {
         x * 0.94, h - 1.65, z + Math.sin(a) * 0.94, D0);
       oval(0.11, 0.13, 0.11, M.lamp, x * 0.94, h - 1.77, z + Math.sin(a) * 0.94, 6, 4, DN);
     }
-    const pendantGlow = new THREE.PointLight(0xffd39b, 5, 9, 1.5);
-    pendantGlow.position.set(0, h - 1.8, z); scene.add(pendantGlow); lights.push(pendantGlow);
+    const pendantGlow = new THREE.PointLight(0xffd39b, 18, 14, 2);
+    pendantGlow.position.set(0, h - 1.8, z);
+    if (pendantIndex === 1) {
+      pendantGlow.castShadow = true;
+      pendantGlow.shadow.mapSize.set(512, 512);
+      pendantGlow.shadow.bias = -0.002;
+      pendantGlow.shadow.normalBias = 0.04;
+      pendantGlow.shadow.camera.near = 0.4;
+      pendantGlow.shadow.camera.far = 16;
+    }
+    scene.add(pendantGlow); lights.push(pendantGlow);
   }
+
 
   // Cada parede é construída em coordenadas locais: z=0 é a face interna, +z entra na sala,
   // x local corre da esquerda para a direita de quem olha a parede.
@@ -281,16 +308,23 @@ export function buildPoliceStation(scene) {
     for (const dx of [-0.24, 0, 0.24]) cyl(0.025, 0.025, h - 2.75, M.plasterLt, lx + dx, h / 2, 0.63, 5, D0);
   };
 
-  const sconce = (lx, intensity = 12, flicker = false) => {
+  const sconce = (lx, intensity = 10, flicker = false) => {
     box(0.12, 0.12, 0.24, M.brass, lx, 3.1, 0.3, D0);
     box(0.3, 0.07, 0.26, M.brass, lx, 3.12, 0.42, D0);
     box(0.22, 0.34, 0.2, M.lamp, lx, 3.35, 0.42, DN);
     box(0.3, 0.06, 0.26, M.brass, lx, 3.57, 0.42, D0);
-    const L = new THREE.PointLight(0xffc684, intensity, 19, 1.7);
-    L.position.copy(b.world(lx, 3.4, 1.0));
-    L.userData.base = intensity;
-    if (flicker) flickerLight = L;
-    scene.add(L); lights.push(L);
+    // A luz real vem de um pool fixo de 5 PointLights: os apliques mais
+    // próximos da câmera acendem, sem estourar o custo do shader.
+    const level = intensity * 0.75;
+    const fixture = sconces.add({
+      position: b.world(lx, 3.4, 1.0),
+      color: 0xffc684,
+      intensity: level,
+      distance: 13,
+      decay: 2,
+    });
+    fixture.base = level;
+    if (flicker) flickerFixture = fixture;
   };
 
   const dress = (len) => {
@@ -311,6 +345,9 @@ export function buildPoliceStation(scene) {
       for (const side of [-1, 1]) {
         const x = side * (openingWidth / 2 + sideWidth / 2);
         box(sideWidth, h + 0.8, 0.6, M.wallStone, x, h / 2, -0.3);
+        // Revestimento liso de reboco acima do lambri, como num prédio público
+        // dos anos 1930; a pedra fica nos pilares e no embasamento.
+        box(sideWidth, h - 2.05, 0.035, M.wallPlaster, x, 2.05 + (h - 2.05) / 2, 0.02, D0);
         box(sideWidth, 1.9, 0.12, M.panel, x, 0.98, -0.02, D0);
         box(sideWidth, 0.14, 0.24, M.stone, x, 1.96, 0.05, D0);
         b.push(x, 0, 0);
@@ -318,9 +355,11 @@ export function buildPoliceStation(scene) {
         b.pop();
       }
       box(openingWidth, h + 0.8 - 3.4, 0.6, M.wallStone, 0, (h + 0.8 + 3.4) / 2, -0.3);
+      box(openingWidth, h - 3.4, 0.035, M.wallPlaster, 0, 3.4 + (h - 3.4) / 2, 0.02, D0);
       b.geo(new THREE.BoxGeometry(openingWidth, 3.3, 0.05), M.dark, 0, 1.65, -0.65, { cast: false });
     } else {
       box(w.len + 1.2, h + 0.8, 0.6, M.wallStone, 0, h / 2, -0.3);
+      box(w.len + 1.2, h - 2.05, 0.035, M.wallPlaster, 0, 2.05 + (h - 2.05) / 2, 0.02, D0);
       box(w.len + 1.2, 1.9, 0.12, M.panel, 0, 0.98, -0.02, D0);
       box(w.len + 1.2, 0.14, 0.24, M.stone, 0, 1.96, 0.05, D0);
       dress(w.len);
@@ -396,21 +435,18 @@ export function buildPoliceStation(scene) {
   col.addPlatform({ minX: -5.4, maxX: 5.4, minZ: 22.7, maxZ: 24.0, y: 0.9, minEntryY: 0.45 });
   col.addRamp({ minX: -4.0, maxX: 4.0, minZ: entryNorth, maxZ: entrySouth, zFrom: entrySouth, yFrom: 0.9, zTo: entryNorth, yTo: 0 });
 
-  // Caixas de suprimentos encostadas às laterais do patamar de entrada, fora da passagem.
-  supplyCrate(-4.65, 23.35, 0.9, 1.0);
-  supplyCrate(4.65, 23.35, 0.9, 1.0);
+  // Os caixotes de madeira reais são posicionados junto com os demais props.
   box(0.44, 0.035, 0.3, M.paper, -1.4, 0.925, 23.1, D0);
   box(0.35, 0.035, 0.26, M.paper, -1.25, 0.952, 23.15, { ...D0, ry: 0.18 });
   box(0.32, 0.13, 0.22, M.olive, 1.6, 0.97, 23.15, D0);
   box(0.22, 0.025, 0.05, M.brass, 1.6, 1.05, 23.15, D0);
-  supplyCrate(-6.0, 17.6, 0, 1.15);
-  supplyCrate(6.0, 17.6, 0, 0.82);
-  planter(-7.8, 17.2, 0, 1.0);
-  planter(7.8, 17.2, 0, 1.0);
+  planter(-7.8, 17.2, 0, 1.0, false);
+  planter(7.8, 17.2, 0, 1.0, false);
 
   // Medalhão de mosaico no piso, colocado na aproximação ao balcão como no salão original.
-  const floorSeal = new THREE.Mesh(new THREE.PlaneGeometry(4.9, 4.9), new THREE.MeshBasicMaterial({
-    map: T.medallion, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
+  const floorSeal = new THREE.Mesh(new THREE.PlaneGeometry(4.9, 4.9), solid({
+    map: T.medallion, transparent: true, opacity: 0.62, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.4, metalness: 0.05,
     side: THREE.DoubleSide,
   }));
   floorSeal.rotation.x = -Math.PI / 2;
@@ -559,8 +595,9 @@ export function buildPoliceStation(scene) {
     box(2.15, 0.22, 1.48, M.trim, 0, y + 0.39, z, D0);
     box(1.92, 0.55, 1.26, M.stone, 0, y + 0.76, z, D0);
     box(2.05, 0.08, 1.36, M.stone, 0, y + 1.06, z, D0);
-    const lionPlaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.43), new THREE.MeshBasicMaterial({
-      map: T.lionEmblem, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    const lionPlaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.43), solid({
+      map: T.lionEmblem, transparent: true, depthWrite: false, roughness: 0.45,
+      metalness: 0.55, side: THREE.DoubleSide,
     }));
     lionPlaque.position.set(0, y + 0.77, z + 0.645);
     lionPlaque.name = 'RPDLionStatuePlaque';
@@ -620,65 +657,23 @@ export function buildPoliceStation(scene) {
     box(0.82, 0.32, 0.025, M.brass, sx, 1.56, sz + 1.53, D0);
     const pedestalSeal = new THREE.Mesh(
       new THREE.PlaneGeometry(0.46, 0.46),
-      new THREE.MeshBasicMaterial({
-        map: T.medallion, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      solid({
+        map: T.medallion, transparent: true, opacity: 0.9, depthWrite: false,
+        roughness: 0.35, metalness: 0.2, side: THREE.DoubleSide,
       }),
     );
     pedestalSeal.position.set(sx, 1.56, sz + 1.55);
     pedestalSeal.renderOrder = 1;
     pedestalSeal.name = 'RPDStatuePedestalSeal';
     scene.add(pedestalSeal);
-    const robe = new THREE.LatheGeometry([
-      new THREE.Vector2(0.88, -1.05), new THREE.Vector2(0.96, -0.92),
-      new THREE.Vector2(0.82, -0.72), new THREE.Vector2(0.68, -0.42),
-      new THREE.Vector2(0.46, -0.08), new THREE.Vector2(0.36, 0.18),
-      new THREE.Vector2(0.39, 0.38), new THREE.Vector2(0.28, 0.56),
-    ], 9);
-    b.geo(robe, M.statue, sx, 3.65, sz, D0);
-    // Pregas finas esculpidas na frente do manto, em vez de uma coluna lisa.
-    for (const foldX of [-0.58, -0.34, -0.12, 0.12, 0.34, 0.58]) {
-      const edge = Math.abs(foldX);
-      const fold = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(foldX * 0.68, 2.64, sz + 0.78 - edge * 0.14),
-        new THREE.Vector3(foldX * 0.9, 3.05, sz + 0.79 - edge * 0.2),
-        new THREE.Vector3(foldX, 3.52, sz + 0.57 - edge * 0.22),
-        new THREE.Vector3(foldX * 0.78, 4.05, sz + 0.43 - edge * 0.15),
-      ]);
-      b.geo(new THREE.TubeGeometry(fold, 7, 0.018, 5, false), M.trim, 0, 0, 0, D0);
-    }
-    const torso = new THREE.LatheGeometry([
-      new THREE.Vector2(0.27, -0.45), new THREE.Vector2(0.32, -0.32),
-      new THREE.Vector2(0.29, -0.08), new THREE.Vector2(0.37, 0.14),
-      new THREE.Vector2(0.44, 0.30), new THREE.Vector2(0.31, 0.45),
-    ], 8);
-    b.geo(torso, M.statue, sx, 5.15, sz, D0);
-    oval(0.48, 0.17, 0.28, M.statue, sx, 5.44, sz, 8, 5, D0); // ombros talhados
-    cyl(0.12, 0.16, 0.3, M.statue, sx, 5.7, sz, 7);
-    // Cabeça esculpida com cabelo, orelhas e planos do rosto legíveis no render de baixa resolução.
-    oval(0.29, 0.35, 0.28, M.statue, sx, 6.0, sz, 10, 8, D0);
-    oval(0.34, 0.13, 0.31, M.statue, sx, 6.22, sz - 0.045, 9, 6, D0);
-    oval(0.075, 0.09, 0.07, M.statue, sx - 0.29, 5.98, sz, 6, 5, D0);
-    oval(0.075, 0.09, 0.07, M.statue, sx + 0.29, 5.98, sz, 6, 5, D0);
-    for (const ex of [-1, 1]) {
-      oval(0.075, 0.035, 0.035, M.recess, sx + ex * 0.11, 6.035, sz + 0.245, 6, 4, D0);
-      oval(0.095, 0.028, 0.04, M.statue, sx + ex * 0.11, 6.09, sz + 0.255, 6, 4, D0);
-    }
-    oval(0.055, 0.12, 0.055, M.statue, sx, 5.99, sz + 0.27, 6, 5, D0); // nariz
-    oval(0.075, 0.025, 0.025, M.recess, sx, 5.91, sz + 0.275, 6, 4, D0); // boca
-    cyl(0.33, 0.36, 0.14, M.statue, sx, 6.25, sz, 8, D0);        // diadema
-    const arm = (length) => new THREE.LatheGeometry([
-      new THREE.Vector2(0.075, -length), new THREE.Vector2(0.105, -length * 0.88),
-      new THREE.Vector2(0.12, -length * 0.58), new THREE.Vector2(0.095, -length * 0.48),
-      new THREE.Vector2(0.14, -length * 0.22), new THREE.Vector2(0.12, 0),
-    ], 6);
-    b.geo(arm(1.15), M.statue, sx - 0.72, 4.85, sz, { ...D0, rz: 0.12 }); // braço esquerdo
-    b.geo(arm(1.15), M.statue, sx + 0.78, 6.22, sz, { ...D0, rz: -0.42 }); // braço erguido
-    oval(0.16, 0.13, 0.13, M.statue, sx + 0.92, 6.63, sz + 0.04, 7, 5, D0); // mão
-    oval(0.15, 0.2, 0.14, M.statue, sx - 0.72, 3.67, sz + 0.06, 7, 5, D0); // mão junto ao manto
-    box(1.3, 0.06, 0.06, M.brass, sx + 1.15, 6.75, sz, D0);                   // balança
-    cyl(0.28, 0.2, 0.08, M.brass, sx + 0.55, 6.3, sz, 8, D0);
-    cyl(0.28, 0.2, 0.08, M.brass, sx + 1.75, 6.3, sz, 8, D0);
-    box(0.04, 0.45, 0.04, M.brass, sx + 1.15, 6.55, sz, D0);
+    // Busto de mármore escaneado (CC0) no lugar da escultura procedural:
+    // a silhueta e o detalhe de superfície vêm de um modelo real.
+    decor.place('marble_bust_01', {
+      position: [sx, 2.41, sz],
+      height: 2.45,
+      rotationY: 0.04,
+      name: 'RPDMarbleBust',
+    });
     col.addBox(sx, sz, 5.2, 5.2, {});
   }
 
@@ -707,23 +702,33 @@ export function buildPoliceStation(scene) {
     // máquina de escrever + fita de tinta
     box(0.5, 0.18, 0.4, M.black, 0.9, 1.35, dz, D0);
     box(0.34, 0.03, 0.22, M.paper, 0.9, 1.45, dz - 0.12, { cam: false, rx: -0.3 });
-    // caixa de munição de pistola
-    box(0.3, 0.1, 0.2, M.olive, 2.9, 1.31, dz, D0);
     // papéis
     box(0.4, 0.015, 0.3, M.paper, -0.8, 1.27, dz + 0.2, D0);
     box(0.36, 0.015, 0.28, M.paper, -1.0, 1.285, dz + 0.25, { cam: false, ry: 0.4 });
-    // Abajures, pastas de expediente e bandejas quebram a linha lisa do tampo.
-    for (const x of [-3.1, 0, 3.1]) {
-      cyl(0.19, 0.24, 0.06, M.brass, x, 1.31, dz - 0.18, 8, D0);
-      cyl(0.045, 0.045, 0.4, M.black, x, 1.53, dz - 0.18, 6, D0);
-      oval(0.22, 0.08, 0.18, M.lamp, x, 1.76, dz - 0.18, 7, 4, DN);
-    }
+    // Props escaneados da Poly Haven substituem os objetos de caixinha.
+    decor.place('desk_lamp_arm_01', {
+      position: [-3.35, 1.26, dz - 0.15], height: 0.96, rotationY: -0.4,
+    });
+    decor.place('mantel_clock_01', {
+      position: [2.1, 1.26, dz - 0.05], height: 0.38, rotationY: -0.28,
+    });
+    decor.place('book_encyclopedia_set_01', {
+      position: [-1.55, 1.26, dz - 0.28], height: 0.27, rotationY: 0.06,
+    });
+    decor.place('ammo_box', {
+      position: [2.9, 1.26, dz], height: 0.19, rotationY: 0.22,
+    });
     for (const [x, color] of [[-1.4, 0x6b3029], [1.75, 0x555842]]) {
-      const fileMaterial = new THREE.MeshLambertMaterial({ color, flatShading: true });
+      const fileMaterial = solid({ color, roughness: 0.85 });
       box(0.42, 0.08, 0.3, fileMaterial, x, 1.32, dz + 0.2, D0);
       box(0.4, 0.05, 0.28, M.paper, x, 1.39, dz + 0.2, D0);
       box(0.08, 0.04, 0.03, M.brass, x - 0.13, 1.42, dz + 0.05, D0);
     }
+    const deskLampFixture = sconces.add({
+      position: new THREE.Vector3(-3.35, 1.95, dz - 0.15),
+      color: 0xffc27a, intensity: 5, distance: 5, decay: 2,
+    });
+    deskLampFixture.base = 5;
     // baú de itens atrás do balcão
     box(1.1, 0.62, 0.7, M.metal, 3.7, 0.31, 3.0, D0);
     box(1.14, 0.12, 0.74, M.black, 3.7, 0.68, 3.0, D0);
@@ -732,43 +737,84 @@ export function buildPoliceStation(scene) {
     col.addBox(3.7, 3.0, 1.2, 0.8, { y0: 0, y1: 0.85 });
   }
 
-  // Área de espera lateral: bancos estofados, mesas baixas e luminárias de apoio.
-  const waitingBench = (x, z, yaw) => {
-    b.push(x, 0, z, yaw);
-    softBox(2.35, 0.18, 0.68, M.wood, 0, 0.56, 0, D0, 0.07);
-    softBox(2.16, 0.22, 0.56, M.upholstery, 0, 0.72, 0.02, D0, 0.09);
-    softBox(2.35, 0.72, 0.16, M.wood, 0, 1.02, -0.28, D0, 0.07);
-    softBox(2.12, 0.48, 0.12, M.upholstery, 0, 1.03, -0.18, D0, 0.055);
-    for (const tx of [-0.68, 0, 0.68]) for (const tz of [-0.12, 0.16]) {
-      oval(0.026, 0.012, 0.026, M.black, tx, 0.835, tz, 6, 4, D0);
-    }
-    for (const tx of [-0.68, 0, 0.68]) for (const ty of [0.88, 1.06, 1.24]) {
-      oval(0.021, 0.021, 0.012, M.black, tx, ty, -0.112, 6, 4, D0);
-    }
-    for (const sx of [-1, 1]) {
-      softBox(0.18, 0.68, 0.72, M.woodLt, sx * 1.16, 0.78, 0.02, D0, 0.07);
-      softBox(0.12, 0.16, 0.78, M.trim, sx * 1.16, 1.16, 0.02, D0, 0.05);
-      for (const zz of [-0.24, 0.24]) {
-        cyl(0.05, 0.075, 0.52, M.black, sx * 0.93, 0.28, zz, 7, D0);
-        cyl(0.078, 0.078, 0.035, M.brass, sx * 0.93, 0.08, zz, 7, D0);
-      }
-    }
-    b.pop();
-    col.addBox(x, z, 1.65, 2.65, { y0: 0, y1: 1.55 });
-  };
-  waitingBench(-9.15, 7.8, Math.PI / 2);
-  waitingBench(9.15, 7.8, -Math.PI / 2);
-
-  // Mesas laterais de atendimento com telefone, fichário e papelada.
+  // Área de espera com móveis escaneados (CC0): cadeiras de couro, mesas e bancos.
+  for (const [x, z, ry] of [
+    [-9.45, 7.1, Math.PI / 2], [9.45, 7.1, -Math.PI / 2],
+    [-9.45, 9.4, Math.PI / 2], [9.45, 9.4, -Math.PI / 2],
+  ]) {
+    decor.place('GreenChair_01', {
+      position: [x, 0, z], height: 0.98, rotationY: ry,
+      collider: { w: 0.85, d: 0.85, h: 1.05 },
+    });
+  }
   for (const sx of [-1, 1]) {
-    const x = sx * 8.9, z = 11.4;
-    box(1.45, 0.14, 0.78, M.wood, x, 0.78, z, D0);
-    box(1.56, 0.08, 0.86, M.trim, x, 0.86, z, D0);
-    for (const dx of [-0.58, 0.58]) for (const dz of [-0.28, 0.28]) box(0.1, 0.72, 0.1, M.woodLt, x + dx, 0.39, z + dz, D0);
-    box(0.46, 0.05, 0.32, M.paper, x - 0.28, 0.93, z - 0.06, D0);
-    box(0.32, 0.03, 0.24, M.paper, x - 0.26, 0.97, z - 0.04, { cam: false, ry: 0.18 });
-    box(0.24, 0.16, 0.22, M.black, x + 0.37, 0.99, z + 0.08, D0);
-    col.addBox(x, z, 1.65, 1.05, { y0: 0, y1: 1.15 });
+    decor.place('WoodenTable_02', {
+      position: [sx * 9.5, 0, 8.25], height: 0.62, rotationY: 0.15,
+      collider: { w: 0.85, d: 0.85, h: 0.7 },
+    });
+    decor.place('vintage_oil_lamp', {
+      position: [sx * 9.5, 0.62, 8.25], height: 0.42,
+    });
+  }
+
+  // Mesas laterais de atendimento: carteiras escolares reais com banquetas.
+  for (const sx of [-1, 1]) {
+    decor.place('SchoolDesk_01', {
+      position: [sx * 8.95, 0, 11.4], height: 0.76,
+      rotationY: sx > 0 ? -Math.PI / 2 : Math.PI / 2,
+      collider: { w: 1.2, d: 0.8, h: 0.85 },
+    });
+    decor.place('folding_wooden_stool', {
+      position: [sx * 8.1, 0, 11.4], height: 0.48,
+      rotationY: sx > 0 ? -Math.PI / 2 : Math.PI / 2,
+      collider: { w: 0.55, d: 0.55, h: 0.6 },
+    });
+  }
+
+  // Relógio de pé, estante, banco e plantas: detalhes que dão escala humana ao salão.
+  decor.place('vintage_grandfather_clock_01', {
+    position: [10.85, 0, 19.35], height: 2.3, rotationY: -Math.PI / 2,
+    collider: { w: 0.8, d: 0.55, h: 2.35 },
+  });
+  decor.place('wooden_bookshelf_worn', {
+    position: [11.15, 0, 14.9], height: 2.15, rotationY: -Math.PI / 2,
+    collider: { w: 1.5, d: 0.5, h: 2.2 },
+  });
+  decor.place('painted_wooden_bench', {
+    position: [-11.25, 0, 13.6], height: 0.96, rotationY: Math.PI / 2,
+    collider: { w: 1.5, d: 0.65, h: 1.0 },
+  });
+  decor.place('vintage_telephone_wall_clock', {
+    position: [-11.72, 2.45, 11.0], height: 0.62, rotationY: Math.PI / 2,
+  });
+  for (const sx of [-1, 1]) {
+    decor.place('potted_plant_02', {
+      position: [sx * 6.95, 0, 18.75], height: 1.05,
+      collider: { w: 0.62, d: 0.62, h: 1.2 },
+    });
+  }
+
+  // Caixotes de madeira substituem as caixas procedurais de suprimentos.
+  for (const [x, z, y, h, ry] of [
+    [-6.0, 17.6, 0, 0.76, 0.18], [6.0, 17.6, 0, 0.64, -0.35],
+    [-4.65, 23.35, 0.9, 0.72, 0.08], [4.65, 23.35, 0.9, 0.72, -0.12],
+  ]) {
+    decor.place('wooden_crate_01', {
+      position: [x, y, z], height: h, rotationY: ry,
+      collider: { w: 0.95, d: 0.85, h: h + 0.1 },
+    });
+  }
+
+  // Plantas reais nos vasos de pedra da entrada e livros na estante.
+  for (const sx of [-1, 1]) {
+    decor.place('potted_plant_02', {
+      position: [sx * 7.8, 0.55, 17.2], height: 0.98, rotationY: sx * 0.55,
+    });
+  }
+  for (const y of [0.45, 0.98, 1.51]) {
+    decor.place('book_encyclopedia_set_01', {
+      position: [11.18, y, 14.9], height: 0.26, rotationY: -Math.PI / 2,
+    });
   }
 
   // Papéis espalhados pelo chão e manchas — o saguão já foi abandonado às pressas
@@ -779,7 +825,10 @@ export function buildPoliceStation(scene) {
       if (Math.abs(x) < 4.4 && z > 3.8 && z < 6.2) continue;
       box(0.32 + r() * 0.1, 0.008, 0.24 + r() * 0.08, M.paper, x, 0.006, z, { cam: false, cast: false, ry: r() * 6.28 });
     }
-    const stain = new THREE.MeshLambertMaterial({ color: 0x2b1311, transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const stain = solid({
+      color: 0x2b1311, transparent: true, opacity: 0.6, depthWrite: false,
+      roughness: 0.35, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2,
+    });
     for (const [x, z, sc] of [[-1.2, 10.2, 1.1], [2.2, 8.2, 0.7], [-6.3, 2.4, 0.9]]) {
       const m = new THREE.Mesh(new THREE.CircleGeometry(sc, 9), stain);
       m.rotation.x = -Math.PI / 2; m.position.set(x, 0.012, z); m.scale.set(1, 1.5, 1); scene.add(m);
@@ -789,7 +838,10 @@ export function buildPoliceStation(scene) {
   // Erva verde perto da escada oeste (item colecionável)
   const herb = new THREE.Group();
   {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.3, 6), new THREE.MeshLambertMaterial({ color: 0x6b4a34, flatShading: true }));
+    const pot = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.15, 0.3, 12),
+      solid({ color: 0x6b4a34, roughness: 0.85, flatShading: false }),
+    );
     pot.position.y = 0.15; herb.add(pot);
     for (let i = 0; i < 7; i++) {
       const lf = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.18), M.green);
@@ -803,16 +855,46 @@ export function buildPoliceStation(scene) {
   }
 
   // ───────────────────────── Luz ─────────────────────────
-  const hemi = new THREE.HemisphereLight(0x84919a, 0x332d25, 0.48);
+  // O HDRI fornece o preenchimento; as luzes abaixo dão direção e cor.
+  const hemi = new THREE.HemisphereLight(0x7c8794, 0x2a231b, 0.05);
   scene.add(hemi);
-  const spot = new THREE.SpotLight(0xffd8a6, 92, 27, 0.48, 0.62, 1.6);
+
+  const spot = new THREE.SpotLight(0xffd8a6, 110, 32, 0.52, 0.68, 2);
   spot.position.set(0, h - 0.9, -0.5);
   spot.target.position.set(0, 4.0, -5);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(2048, 2048);
+  spot.shadow.camera.near = 1;
+  spot.shadow.camera.far = 32;
+  spot.shadow.bias = -0.0007;
+  spot.shadow.normalBias = 0.035;
+  spot.shadow.focus = 1;
   scene.add(spot, spot.target);
+  lights.push(spot);
+
+  // Luz fria da tempestade entrando pelas janelas: dá volume e separa a
+  // arquitetura do fundo escuro, típico das noites chuvosas de Raccoon City.
+  const southWindow = new THREE.RectAreaLight(0x8fa9c9, 4.2, 6.4, 4.8);
+  southWindow.position.set(0, 5.8, 22.55);
+  southWindow.lookAt(0, 4.0, 0);
+  scene.add(southWindow);
+  lights.push(southWindow);
+
+  const northWindow = new THREE.RectAreaLight(0x9db6d6, 2.2, 2.2, 3.6);
+  northWindow.position.set(0, 7.4, -15.35);
+  northWindow.lookAt(0, 5.5, 0);
+  scene.add(northWindow);
+  lights.push(northWindow);
+
+  const storm = new THREE.DirectionalLight(0x9fb8d8, 0);
+  storm.position.set(-14, 16, 26);
+  storm.target.position.set(0, 0, 0);
+  scene.add(storm, storm.target);
+  lights.push(storm);
 
   // Luz de preenchimento nas laterais das escadas (senão os degraus ficam pretos)
   for (const sx of [-1, 1]) {
-    const L = new THREE.PointLight(0xffb878, 6, 12, 1.6);
+    const L = new THREE.PointLight(0xffb878, 11, 13, 2);
     L.position.set(sx * 6.4, 2.2, -5.5);
     scene.add(L); lights.push(L);
   }
@@ -857,8 +939,8 @@ export function buildPoliceStation(scene) {
       onUse: (c) => c.toast('Baú de itens (vazio).') },
     { id: 'herb', pos: P(-7.6, 0.7), y: 0, radius: 1.6, label: 'Pegar erva verde',
       enabled: () => !state.herb, onUse: (c) => { state.herb = true; herb.visible = false; c.toast('Você pegou: Erva Verde'); } },
-    { id: 'statue', pos: P(0, -5), y: 0, radius: 4.2, label: 'Examinar estátua da deusa',
-      onUse: (c) => c.toast('Na base da estátua há um encaixe vazio. Parece feito para um medalhão.') },
+    { id: 'statue', pos: P(0, -5), y: 0, radius: 4.2, label: 'Examinar busto de mármore',
+      onUse: (c) => c.toast('Um busto de mármore, frio ao toque. Na base há um encaixe vazio.') },
     { id: 'fuse', pos: P(-4.55, 23.2), y: 0.9, radius: 1.8, label: 'Examinar caixa de fusíveis',
       onUse: (c) => c.toast('Caixa de fusíveis. Falta uma peça.') },
     { id: 'lion', pos: P(0, -14.4), y: gy, radius: 2.2, label: 'Examinar estátua do leão',
@@ -889,7 +971,8 @@ export function buildPoliceStation(scene) {
   // ───────────────────────── Atmosfera: raios e lâmpada falhando ─────────────────────────
   let flash = 0, nextFlash = 3.5;
   const hemiBase = hemi.intensity;
-  function update(t, dt) {
+  const poolCamera = new THREE.Vector3(0, 2, 10);
+  function update(t, dt, cameraPosition) {
     for (const doorState of animatedDoors) {
       for (const leaf of doorState.leaves) {
         const side = leaf.position.x < 0 ? -1 : 1;
@@ -909,12 +992,10 @@ export function buildPoliceStation(scene) {
     if (nextFlash < 0) { flash = 1; nextFlash = 6 + Math.random() * 10; }
     flash = Math.max(0, flash - dt * (flash > 0.55 ? 2.4 : 1.1));
     const f = flash * (0.65 + 0.35 * Math.sin(t * 61));
-    M.glass.color.setScalar(1 + f * 7.5);
-    M.stainedGlass.color.setScalar(1 + f * 5.8);
-    if (M.glass.emissive) M.glass.emissive.setRGB(0.18 + f * 1.9, 0.22 + f * 2.2, 0.30 + f * 2.8);
-    // O vidro do RPD usa principalmente stainedGlass (não M.glass); os dois
-    // materiais recebem o clarão para que as janelas realmente acendam.
-    if (M.stainedGlass.emissive) M.stainedGlass.emissive.setRGB(0.22 + f * 1.8, 0.28 + f * 2.1, 0.38 + f * 2.7);
+    M.glass.color.setScalar(0.82 + f * 5.5);
+    M.stainedGlass.color.setScalar(1 + f * 4.2);
+    M.glass.emissive.setRGB(0.02 + f * 0.5, 0.03 + f * 0.6, 0.05 + f * 0.8);
+    M.stainedGlass.emissive.setRGB(0.11 + f * 1.5, 0.16 + f * 1.8, 0.22 + f * 2.2);
     windowRain.forEach(({ mesh, meta, base }) => {
       const attr = mesh.geometry.attributes.position;
       for (let i = 0; i < meta.length; i++) {
@@ -927,8 +1008,13 @@ export function buildPoliceStation(scene) {
       }
       attr.needsUpdate = true;
     });
-    hemi.intensity = hemiBase + f * 4.6;
-    if (flickerLight) flickerLight.intensity = flickerLight.userData.base * (0.88 + 0.12 * Math.sin(t * 11) - (Math.random() < 0.015 ? 0.55 : 0));
+    hemi.intensity = hemiBase + f * 1.3;
+    storm.intensity = f * 7;
+    if (flickerFixture) {
+      flickerFixture.intensity = flickerFixture.base
+        * (0.88 + 0.12 * Math.sin(t * 11) - (Math.random() < 0.015 ? 0.55 : 0));
+    }
+    sconces.update(cameraPosition ?? poolCamera);
   }
 
   return {

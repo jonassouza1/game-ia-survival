@@ -6,23 +6,26 @@ import { createPlayer } from './player/player.js';
 import { createInteraction } from './systems/interaction.js';
 import { createAudio } from './systems/audio.js';
 import { createInventory } from './systems/inventory.js';
+import { initPBR } from './render/pbr.js';
+import { createEnvironment } from './render/environment.js';
+import { createPostFX } from './render/postfx.js';
+import { resolveQuality, applyQuality, configureGroupShadows } from './render/quality.js';
 
 const container = document.querySelector('#game');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0e0d0a);
 scene.fog = new THREE.FogExp2(0x14120d, 0.012);
-scene.add(new THREE.HemisphereLight(0xc7d4df, 0x33271d, 1.2));
 
-const camera = new THREE.PerspectiveCamera(58, container.clientWidth / container.clientHeight, 0.1, 100);
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const camera = new THREE.PerspectiveCamera(58, container.clientWidth / container.clientHeight, 0.1, 110);
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+const quality = resolveQuality(renderer);
+applyQuality(renderer, quality);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.04;
+renderer.toneMappingExposure = 1.05;
 container.prepend(renderer.domElement);
 renderer.setSize(container.clientWidth, container.clientHeight);
+initPBR(renderer);
 
 const hallGroup = new THREE.Group();
 const streetGroup = new THREE.Group();
@@ -31,13 +34,28 @@ streetGroup.name = 'RaccoonCityStreet';
 scene.add(hallGroup, streetGroup);
 const hallWorld = buildPoliceStation(hallGroup);
 const streetWorld = buildCityStreet(streetGroup);
+configureGroupShadows(hallGroup, quality);
+configureGroupShadows(streetGroup, quality);
 hallGroup.visible = true;
 streetGroup.visible = false;
 const world = { ...hallWorld };
 let activeLocation = 'hall';
+const environment = createEnvironment(renderer, scene);
+const postfx = createPostFX(renderer, scene, camera, { quality });
 const audio = createAudio();
 const overlay = document.querySelector('#overlay');
 const startButton = document.querySelector('#start');
+for (const button of document.querySelectorAll('[data-quality]')) {
+  button.classList.toggle('active', button.dataset.quality === quality.name);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try { window.localStorage.setItem('rpd-quality', button.dataset.quality); } catch { /* sem storage */ }
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', button.dataset.quality);
+    window.location.href = url.toString();
+  });
+}
 const reticle = document.querySelector('#reticle');
 const ammoHud = document.querySelector('#ammo-hud');
 let started = false;
@@ -74,7 +92,7 @@ function switchScene(destination, spawn) {
       : 'RACCOON POLICE DEPARTMENT · SAGUÃO PRINCIPAL';
     scene.fog.color.set(destination === 'street' ? 0x0d1114 : 0x14120d);
     scene.fog.density = destination === 'street' ? 0.008 : 0.012;
-    scene.background.set(destination === 'street' ? 0x03070b : 0x0e0d0a);
+    environment.apply(destination);
     audio.setEnvironment(destination);
     interaction.toast(destination === 'street'
       ? 'Você chegou à rua. A porta do R.P.D. permanece aberta.'
@@ -104,7 +122,7 @@ const inventory = createInventory({
   },
 });
 player = createPlayer({
-  scene, world, camera, dom: renderer.domElement, audio, inventory,
+  scene, world, camera, dom: renderer.domElement, audio, inventory, quality,
 });
 
 interaction = createInteraction({
@@ -162,17 +180,21 @@ window.addEventListener('resize', () => {
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
   renderer.setSize(container.clientWidth, container.clientHeight);
+  postfx.setSize(container.clientWidth, container.clientHeight);
 });
 
 // Gancho de depuração (console: __rpd.player.state)
-window.__rpd = { scene, camera, player, world, renderer, audio, inventory, step: (dt = 1 / 60) => frame(dt) };
+window.__rpd = {
+  THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality,
+  step: (dt = 1 / 60) => frame(dt),
+};
 
 const clock = new THREE.Clock();
 let t = 0;
 function frame(dt) {
   t += dt;
   player.update(dt);
-  world.update(t, dt);
+  world.update(t, dt, camera.position);
   interaction.update(dt, player.state);
   reticle.classList.toggle('on', player.state.aimT > 0.5);
   const aimPoint = player.aimScreenPosition();
@@ -182,7 +204,7 @@ function frame(dt) {
   }
   const ammo = inventory.ammo;
   ammoHud.textContent = `${ammo.magazine} / ${ammo.reserve}`;
-  renderer.render(scene, camera);
+  postfx.render(dt);
 }
 function animate() {
   requestAnimationFrame(animate);

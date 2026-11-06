@@ -387,7 +387,7 @@ function buildModel() {
     muzzleLocal: new THREE.Vector3(0, 0.055, 0.274),
   };
 }
-export function createPlayer({ scene, world, camera, displayCamera, dom, audio, inventory, getFixedView }) {
+export function createPlayer({ scene, world, camera, displayCamera, dom, audio, inventory, getFixedView, quality }) {
   const col = world.collisions;
   const model = buildModel();
   // Prefer the supplied PS1-era mesh and atlas; keep the procedural model as a loading fallback.
@@ -424,13 +424,16 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   });
   const leonTexture = new THREE.TextureLoader().load('/models/leon/EMD48.png');
   leonTexture.colorSpace = THREE.SRGBColorSpace;
-  leonTexture.magFilter = THREE.NearestFilter;
-  leonTexture.minFilter = THREE.NearestMipmapNearestFilter;
+  leonTexture.magFilter = THREE.LinearFilter;
+  leonTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  leonTexture.anisotropy = 4;
   leonTexture.generateMipmaps = true;
   new OBJLoader().load('/models/leon/leon.obj', (asset) => {
-    const material = new THREE.MeshLambertMaterial({
-      map: leonTexture, color: 0xffffff, flatShading: true, side: THREE.DoubleSide,
+    const material = new THREE.MeshStandardMaterial({
+      map: leonTexture, color: 0xffffff, roughness: 0.74, metalness: 0.04,
+      side: THREE.DoubleSide,
     });
+    material.envMapIntensity = 0.9;
     asset.traverse((part) => {
       if (!part.isMesh) return;
       part.material = material;
@@ -484,13 +487,6 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   const occlusionGroup = new THREE.Group();
   occlusionGroup.renderOrder = 10;
   scene.add(occlusionGroup);
-  const contactShadow = new THREE.Mesh(
-    new THREE.CircleGeometry(1, 10),
-    new THREE.MeshBasicMaterial({ color: 0x090908, transparent: true, opacity: 0.42, depthTest: false, depthWrite: false }),
-  );
-  contactShadow.position.z = -0.1;
-  contactShadow.renderOrder = -0.5;
-  scene.add(contactShadow);
 
   function updateOcclusion(view) {
     for (const mask of occlusionGroup.children) {
@@ -576,11 +572,18 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     }
   });
   // Lanterna presa ao colete
-  const flash = new THREE.SpotLight(0xfff0d0, 90, 26, 0.5, 0.65, 1.5);
+  const flash = new THREE.SpotLight(0xfff0d0, 62, 22, 0.5, 0.68, 2);
   flash.castShadow = true;
-  flash.shadow.mapSize.set(512, 512);
+  const flashShadowSize = quality?.shadows === 'flashlight' ? 256 : 512;
+  flash.shadow.mapSize.set(flashShadowSize, flashShadowSize);
   flash.shadow.bias = -0.0008;
   scene.add(flash, flash.target);
+
+  // Preenchimento suave preso à câmera: revela o personagem e o chão imediato
+  // sem apagar o contraste das fontes de luz da cena.
+  const cameraFill = new THREE.PointLight(0xa8bdd4, 0.9, 4.2, 2);
+  cameraFill.castShadow = false;
+  scene.add(cameraFill);
 
   const raycaster = new THREE.Raycaster();
   const dir = new THREE.Vector3(), right = new THREE.Vector3(), pivot = new THREE.Vector3();
@@ -895,9 +898,6 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       const projected = S.fixedView.project(S);
       model.root.position.set(projected.x * displayCamera.right, projected.y, 0);
       model.root.scale.setScalar(projected.scale);
-      contactShadow.position.set(projected.x * displayCamera.right, projected.y + projected.scale * 0.035, -0.1);
-      contactShadow.scale.set(projected.scale * 0.5, projected.scale * 0.15, 1);
-      contactShadow.visible = true;
       displayCamera.position.set(0, 0, 10);
       displayCamera.lookAt(0, 0, 0);
       displayCamera.updateMatrixWorld(true);
@@ -924,10 +924,11 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     camera.lookAt(tmp.copy(camera.position).addScaledVector(dir, 10));
     tmp.y += S.recoil * 0.42 * a;
     camera.lookAt(tmp);
+    cameraFill.position.copy(camera.position).addScaledVector(dir, 0.45);
+    cameraFill.position.y += 0.15;
     const fov = THREE.MathUtils.lerp(CAM.fovFree, CAM.fovAim, a);
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     model.root.visible = full * S.camFrac > 0.75;
-    contactShadow.visible = false;
   }
 
   function update(dt) {

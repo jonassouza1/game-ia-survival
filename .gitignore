@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .env
+.tools/
+.npm-cache/
+.build-tmp/
+screenshots/
+*.log

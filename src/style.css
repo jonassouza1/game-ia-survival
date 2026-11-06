@@ -12,6 +12,10 @@
 #overlay p{font-size:12px;letter-spacing:1px;color:#aaa797;margin:30px 0}
 button{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:2px;color:#e6dfcd;background:#762c26;border:1px solid #a95a4c;padding:16px 26px;cursor:pointer;transition:background .2s,transform .2s}button:hover{background:#963c31;transform:translateY(-2px)}
 .overlay-note{position:absolute;bottom:28px;font-size:9px;letter-spacing:2px;color:#716f63}
+.quality{display:flex;align-items:center;gap:8px;margin-top:22px;font-size:9px;letter-spacing:2px;color:#8f8b7b}
+.quality button{background:transparent;border:1px solid #4a473c;padding:6px 10px;font-size:9px;letter-spacing:1px;color:#a8a492;transform:none}
+.quality button:hover{background:#2a2822;transform:none}
+.quality button.active{color:#e8dfc9;border-color:#a95a4c;background:#3a211d}
 @media(max-width:650px){.location{display:none}#topbar{padding:16px}.brand{font-size:18px}#hud,#help{left:14px}.location{font-size:8px}}
 /* Mira (só aparece ao mirar, como no remake) */
 #reticle{position:absolute;z-index:3;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%) scale(1.6);border:1px solid #d8d4be;border-radius:50%;opacity:0;transition:opacity .12s,transform .18s;pointer-events:none}

@@ -56,22 +56,24 @@ function bakeLightAndOcclusion(geo) {
     const nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i);
     const wallZ = z < 0 ? 16 + z : 14 - z;
     const wallGap = Math.max(0, Math.min(12 - Math.abs(x), wallZ));
-    const contact = 0.15 * Math.exp(-Math.max(0, y) / 0.7)
-      + 0.11 * Math.exp(-wallGap / 0.38)
-      + 0.07 * Math.exp(-Math.max(0, 9.2 - y) / 0.4);
-    let cr = 0.83 - contact, cg = 0.83 - contact, cb = 0.83 - contact;
+    const contact = 0.20 * Math.exp(-Math.max(0, y) / 0.75)
+      + 0.14 * Math.exp(-wallGap / 0.42)
+      + 0.09 * Math.exp(-Math.max(0, 9.2 - y) / 0.45);
+    // Base neutra: com materiais PBR a iluminação real vem do HDRI e das luzes.
+    // Os vértices guardam principalmente oclusão e um leve calor ambiente.
+    let cr = 0.9 - contact, cg = 0.9 - contact, cb = 0.9 - contact;
     for (const light of BAKED_LIGHTS) {
       const dx = light.x - x, dy = light.y - y, dz = light.z - z;
       const d2 = dx * dx + dy * dy + dz * dz;
       const inv = 1 / Math.sqrt(Math.max(d2, 0.0001));
       const diffuse = Math.max(0, nx * dx * inv + ny * dy * inv + nz * dz * inv);
-      const energy = light.power * diffuse / (1 + d2 * 0.055);
+      const energy = 0.55 * light.power * diffuse / (1 + d2 * 0.055);
       cr += energy * light.tint[0]; cg += energy * light.tint[1]; cb += energy * light.tint[2];
     }
     const j = i * 3;
-    colors[j] = THREE.MathUtils.clamp(cr, 0.48, 1.1);
-    colors[j + 1] = THREE.MathUtils.clamp(cg, 0.46, 1.06);
-    colors[j + 2] = THREE.MathUtils.clamp(cb, 0.44, 1.02);
+    colors[j] = THREE.MathUtils.clamp(cr, 0.42, 1.08);
+    colors[j + 1] = THREE.MathUtils.clamp(cg, 0.4, 1.04);
+    colors[j + 2] = THREE.MathUtils.clamp(cb, 0.38, 1.0);
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 }
