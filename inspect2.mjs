@@ -1,0 +1,10 @@
+﻿import fs from 'node:fs';
+const buf=fs.readFileSync('public/models/character/swat.glb');
+const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
+const len=dv.getUint32(12,true);
+const gltf=JSON.parse(buf.subarray(20,20+len).toString('utf8'));
+console.log('nodes:');
+gltf.nodes.forEach((n,i)=>console.log(i,JSON.stringify(n.name),'mesh',n.mesh,'skin',n.skin,'children',n.children?.length||0));
+console.log('meshes',JSON.stringify(gltf.meshes,null,2).slice(0,3000));
+console.log('materials',JSON.stringify(gltf.materials,null,2).slice(0,2000));
+console.log('animations',JSON.stringify(gltf.animations?.map(a=>({name:a.name,channels:a.channels.length,samplers:a.samplers.length})),null,2));
