@@ -1032,44 +1032,38 @@ export function buildCityStreet(group) {
   // Props escaneados (CC0) dão escala e imperfeição à calçada: telefone
   // público, hidrante, lata de lixo, banco, barril e caixotes.
   const streetProps = createProps({ parent: group, collisions, anisotropy: 8 });
-  const sidewalkY = 0.14;
-  streetProps.place('korean_public_payphone_01', {
-    position: [12.55, sidewalkY, 6.2], height: 2.05, rotationY: -Math.PI / 2,
-    collider: { w: 0.75, d: 0.75, h: 2.15 },
-  });
+  // Props rasos ficam junto ao meio-fio, à frente da fachada dos prédios.
+  // O telefone público ficou no saguão do R.P.D. (a calçada da rua é estreita
+  // demais e os modelos de prédio avançam sobre ela).
   streetProps.place('fire_hydrant', {
-    position: [12.5, sidewalkY, 12.6], height: 0.72,
+    position: [11.3, 0, 12.6], height: 0.72,
     collider: { w: 0.5, d: 0.5, h: 0.85 },
   });
   streetProps.place('metal_trash_can', {
-    position: [-12.55, sidewalkY, 12.5], height: 1.0,
+    position: [-11.3, 0, 12.5], height: 1.0,
     collider: { w: 0.65, d: 0.65, h: 1.1 },
   });
   streetProps.place('trashbag', {
-    position: [-12.95, sidewalkY, 13.5], height: 0.55,
+    position: [-11.2, 0, 13.5], height: 0.55,
   });
   streetProps.place('painted_wooden_bench', {
-    position: [-12.6, sidewalkY, 24.0], height: 0.95, rotationY: Math.PI / 2,
+    position: [-11.3, 0, 24.0], height: 0.95, rotationY: Math.PI / 2,
     collider: { w: 0.6, d: 1.5, h: 1.0 },
   });
   streetProps.place('Barrel_01', {
-    position: [13.5, sidewalkY, 24.6], height: 0.95,
+    position: [11.3, 0, 24.6], height: 0.95,
     collider: { w: 0.8, d: 0.8, h: 1.05 },
   });
-  streetProps.place('utility_box_01', {
-    position: [12.55, sidewalkY, 36.2], height: 1.35, rotationY: -Math.PI / 2,
-    collider: { w: 0.7, d: 1.0, h: 1.45 },
-  });
   streetProps.place('wooden_crate_01', {
-    position: [-13.0, sidewalkY, 52.0], height: 0.7, rotationY: 0.3,
+    position: [-11.2, 0, 52.0], height: 0.7, rotationY: 0.3,
     collider: { w: 0.85, d: 0.8, h: 0.8 },
   });
   streetProps.place('fire_hydrant', {
-    position: [-12.5, sidewalkY, 45.5], height: 0.72,
+    position: [-11.3, 0, 45.5], height: 0.72,
     collider: { w: 0.5, d: 0.5, h: 0.85 },
   });
   streetProps.place('metal_trash_can', {
-    position: [12.9, sidewalkY, 62.0], height: 1.0,
+    position: [11.3, 0, 62.0], height: 1.0,
     collider: { w: 0.65, d: 0.65, h: 1.1 },
   });
 

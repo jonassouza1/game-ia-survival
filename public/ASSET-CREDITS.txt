@@ -61,9 +61,22 @@ Modelos 3D (props de cenário):
 - utility_box_01
 - street_lamp_01
 
-Os arquivos ficam em public/textures/pbr/, public/hdri/ e
-public/models/polyhaven/. O script tools/fetch-assets.mjs baixa novamente
-qualquer arquivo ausente; tools/write-credits.mjs regenera esta lista.
+Personagem e animações (Mixamo/Adobe, não CC0)
+--------------------------------------------
+- public/models/character/swat.glb — "SWAT" — Mixamo, via biblioteca de
+  personagens three.ws (https://three.ws/character-library). Licença Mixamo
+  (Adobe): uso gratuito em projetos, mas consulte os termos da Adobe antes de
+  redistribuir o arquivo isoladamente.
+- public/models/character/Soldier.glb — "Soldier" — Mixamo, via exemplos do
+  three.js (https://github.com/mrdoob/three.js). Usado apenas como fonte dos
+  clipes Idle/Walk/Run, retargetados para o esqueleto do SWAT.
+- O personagem antigo em public/models/leon foi removido; o modelo procedural
+  de fallback continua no código, sem depender de assets externos.
+
+Os arquivos ficam em public/textures/pbr/, public/hdri/,
+public/models/polyhaven/ e public/models/character/. O script
+tools/fetch-assets.mjs baixa novamente qualquer arquivo ausente;
+tools/write-credits.mjs regenera esta lista.
 
 Assets CC0 já presentes no projeto
 ----------------------------------
@@ -88,9 +101,9 @@ Assets CC0 já presentes no projeto
 
 Modelos e texturas pré-existentes
 ---------------------------------
-- public/models/leon/ (leon.obj + EMD48.png) e os modelos de prédios/carros
-  em public/models/*.glb já faziam parte do projeto original. A licença deles
-  não é reivindicada aqui; verifique a origem antes de redistribuir o jogo.
+- Os modelos de prédios/carros em public/models/*.glb já faziam parte do projeto
+  original. A licença deles não é reivindicada aqui; verifique a origem antes de
+  redistribuir o jogo.
 - Os desenhos gráficos do vitral, medalhão, brasão e placas são gerados por
   canvas no código do jogo.
 

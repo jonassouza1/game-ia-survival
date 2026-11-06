@@ -85,6 +85,23 @@ const MODELS = [
   'street_lamp_01',
 ];
 
+// Personagem e clipes Mixamo (licença Mixamo/Adobe, não CC0). O SWAT é o
+// personagem jogável; o Soldier fornece apenas os clipes Walk/Run do mesmo rig.
+const CHARACTERS = [
+  {
+    name: 'swat',
+    url: 'https://pub-2534e921bf9c4314addcd4d8a6e98b7b.r2.dev/avatars/mixamo/glb/swat.glb',
+    source: 'Mixamo, via biblioteca de personagens three.ws',
+    license: 'Mixamo (Adobe)',
+  },
+  {
+    name: 'Soldier',
+    url: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb',
+    source: 'three.js examples / Mixamo',
+    license: 'Mixamo (Adobe)',
+  },
+];
+
 const CONCURRENCY = 4;
 
 // ─────────────────────────────── Helpers ───────────────────────────────
@@ -200,6 +217,17 @@ async function fetchModel(id) {
   console.log(`  ✓ ${id} — ${bytes(total)} (${entries.length + 1} arquivos)`);
 }
 
+// ───────────────────────────────── Personagem ─────────────────────────────────
+async function fetchCharacter(entry) {
+  const file = path.join(PUBLIC, 'models', 'character', `${entry.name}.glb`);
+  if (!FORCE && await exists(file)) {
+    console.log(`  · ${entry.name} (já existe)`);
+    return;
+  }
+  const size = await download(entry.url, file);
+  console.log(`  ✓ ${entry.name} — ${bytes(size)}`);
+}
+
 // ───────────────────────────────── Catálogo de créditos ─────────────────
 async function writeManifest() {
   const manifest = {
@@ -209,6 +237,12 @@ async function writeManifest() {
     textures: TEXTURES.map((id) => ({ id, path: `/textures/pbr/${id}/` })),
     hdris: HDRIS.map((id) => ({ id, path: `/hdri/${id}_1k.hdr` })),
     models: MODELS.map((id) => ({ id, path: `/models/polyhaven/${id}/${id}.gltf` })),
+    characters: CHARACTERS.map((entry) => ({
+      id: entry.name,
+      path: `/models/character/${entry.name}.glb`,
+      source: entry.source,
+      license: entry.license,
+    })),
   };
   await fs.writeFile(
     path.join(PUBLIC, 'assets-manifest.json'),
@@ -217,7 +251,7 @@ async function writeManifest() {
 }
 
 // ─────────────────────────────────── main ───────────────────────────────────
-const categories = ONLY.length ? ONLY : ['textures', 'hdris', 'models'];
+const categories = ONLY.length ? ONLY : ['textures', 'hdris', 'models', 'characters'];
 console.log(`Poly Haven → ${path.relative(ROOT, PUBLIC)} (${categories.join(', ')})`);
 let failures = 0;
 
@@ -232,6 +266,10 @@ if (categories.includes('hdris')) {
 if (categories.includes('models')) {
   console.log('\nModelos');
   failures += await pool(MODELS, fetchModel);
+}
+if (categories.includes('characters')) {
+  console.log('\nPersonagem e clipes');
+  failures += await pool(CHARACTERS, fetchCharacter);
 }
 
 await writeManifest();

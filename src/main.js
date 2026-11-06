@@ -6,6 +6,7 @@ import { createPlayer } from './player/player.js';
 import { createInteraction } from './systems/interaction.js';
 import { createAudio } from './systems/audio.js';
 import { createInventory } from './systems/inventory.js';
+import { CollisionWorld } from './systems/collision.js';
 import { initPBR } from './render/pbr.js';
 import { createEnvironment } from './render/environment.js';
 import { createPostFX } from './render/postfx.js';
@@ -38,7 +39,18 @@ configureGroupShadows(hallGroup, quality);
 configureGroupShadows(streetGroup, quality);
 hallGroup.visible = true;
 streetGroup.visible = false;
-const world = { ...hallWorld };
+// O jogador mantém um CollisionWorld próprio. Antes, a troca de cena
+// sobrescrevia os arrays do saguão com os da rua, e ao voltar a delegacia
+// herdava as colisões erradas. Agora só copiamos de/para este objeto ativo.
+const activeCollisions = new CollisionWorld();
+function copyCollisions(target, source) {
+  target.boxes.splice(0, target.boxes.length, ...source.boxes);
+  target.ramps.splice(0, target.ramps.length, ...source.ramps);
+  target.platforms.splice(0, target.platforms.length, ...source.platforms);
+  target.floors.splice(0, target.floors.length, ...source.floors);
+}
+copyCollisions(activeCollisions, hallWorld.collisions);
+const world = { ...hallWorld, collisions: activeCollisions };
 let activeLocation = 'hall';
 const environment = createEnvironment(renderer, scene);
 const postfx = createPostFX(renderer, scene, camera, { quality });
@@ -78,11 +90,7 @@ function switchScene(destination, spawn) {
     activeLocation = destination;
     hallGroup.visible = destination === 'hall';
     streetGroup.visible = destination === 'street';
-    world.collisions.boxes.splice(0, world.collisions.boxes.length, ...nextWorld.collisions.boxes);
-    world.collisions.ramps.splice(0, world.collisions.ramps.length, ...nextWorld.collisions.ramps);
-    world.collisions.platforms.splice(0, world.collisions.platforms.length, ...nextWorld.collisions.platforms);
-    world.collisions.floors.splice(0, world.collisions.floors.length, ...nextWorld.collisions.floors);
-    world.occluders = nextWorld.occluders;
+    copyCollisions(world.collisions, nextWorld.collisions);    world.occluders = nextWorld.occluders;
     world.update = nextWorld.update;
     world.props = nextWorld.props;
     player.teleport(spawn || nextWorld.spawn);
@@ -186,6 +194,7 @@ window.addEventListener('resize', () => {
 // Gancho de depuração (console: __rpd.player.state)
 window.__rpd = {
   THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality,
+  activeCollisions, hallWorld, streetWorld,
   step: (dt = 1 / 60) => frame(dt),
 };
 

@@ -787,6 +787,11 @@ export function buildPoliceStation(scene) {
   decor.place('vintage_telephone_wall_clock', {
     position: [-11.72, 2.45, 11.0], height: 0.62, rotationY: Math.PI / 2,
   });
+  // Telefone público ao lado do relógio, na parede oeste do saguão.
+  decor.place('korean_public_payphone_01', {
+    position: [-11.35, 0, 10.35], height: 2.05, rotationY: Math.PI / 2,
+    tint: 0.72, collider: { w: 1.0, d: 0.9, h: 2.15 },
+  });
   for (const sx of [-1, 1]) {
     decor.place('potted_plant_02', {
       position: [sx * 6.95, 0, 18.75], height: 1.05,

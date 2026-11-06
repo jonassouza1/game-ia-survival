@@ -32,10 +32,15 @@ npm run preview
   linear, mipmaps e anisotropia.
 - **Iluminação baseada em HDRI**: ambiente PMREM para o saguão e para a rua,
   céu noturno, luzes de janela, pendentes, apliques e lanterna com sombras.
+- **Personagem real e animado**: SWAT Mixamo (malha, esqueleto e texturas
+  reais), clipes Mixamo de idle/walk/run retargetados para o esqueleto do SWAT,
+  mira de pistola por IK de dois ossos e pistola CC0 presa à mão.
+- **Movimento mais natural**: aceleração/desaceleração, andar (`C`), correr
+  (`Shift`), inclinação lateral da câmera, balanço e FOV de corrida.
 - **Props 3D escaneados**: busto de mármore, relógio de pé, estante com livros,
   cadeiras de couro, carteiras escolares, mesas, caixotes, plantas, luminária
-  de mesa, relógio de parede, telefone público, hidrante, lixeira, barril e
-  caixa de utilidades.
+  de mesa, relógio de parede, telefone público no saguão, hidrante, lixeira,
+  barril e caixa de utilidades.
 - **Pós-processamento**: GTAO (oclusão em espaço de tela), bloom, tone mapping
   ACES, gradação de cor, vinheta e grão de filme; MSAA no composer.
 - **Chão de mármore com juntas reais** e medalhão de mosaico em alta resolução.
@@ -59,13 +64,14 @@ Na tela inicial, os botões **ALTO / MÉDIO / BAIXO** gravam a escolha em
 `localStorage` e recarregam a página. Também é possível forçar pela URL:
 `?q=high`, `?q=medium` ou `?q=low`.
 
-Na Intel HD 620 de referência: ~10 fps no alto, ~20 fps no médio e ~30 fps no
+Na Intel HD 620 de referência: ~10 fps no alto, ~20 fps no médio e ~50 fps no
 baixo em 1080×810. Em GPU dedicada, o alto fica confortável.
 
 ## Controles
 
-`W A S D` mover · `mouse` virar · botão direito mirar · botão esquerdo atirar ·
-`I`/`Tab` inventário · `R` recarregar · `E` usar · `F` lanterna.
+`W A S D` mover · `Shift` correr · `C` andar · `mouse` virar · botão direito
+mirar · botão esquerdo atirar · `I`/`Tab` inventário · `R` recarregar · `E` usar
+· `F` lanterna.
 
 ## Assets e licenças
 
@@ -75,11 +81,13 @@ Os assets CC0 baixados ficam em:
 public/textures/pbr/<id>/{diffuse,normal,arm}.jpg
 public/hdri/<id>_1k.hdr
 public/models/polyhaven/<id>/<id>.gltf
+public/models/character/{swat,Soldier}.glb
 ```
 
 Catálogo, origem e licenças: **[public/ASSET-CREDITS.txt](public/ASSET-CREDITS.txt)**.
 
-- `npm run assets` — baixa o que estiver faltando (Poly Haven, CC0 1.0).
+- `npm run assets` — baixa o que estiver faltando (Poly Haven CC0 + personagem
+  Mixamo).
 - `npm run credits` — regenera a lista de créditos a partir de
   `public/assets-manifest.json`.
 
@@ -102,16 +110,17 @@ src/
     cityStreet.js         rua de Raccoon City
     textures.js           desenhos gráficos (vitral, medalhão, brasão)
     props.js              loader/clone/colisão dos props CC0
-  player/player.js        personagem, câmera, lanterna e mira
+  player/player.js        personagem SWAT/Mixamo, IK de mira, câmera e lanternas
 tools/
-  fetch-assets.mjs        download dos assets CC0
+  fetch-assets.mjs        download dos assets CC0 e do personagem Mixamo
   write-credits.mjs       geração dos créditos
 ```
 
 ## Limitações conhecidas
 
-- O modelo do personagem ainda é a malha PS1 de Leon fornecida no projeto
-  original; ela foi reiluminada com material PBR, mas a geometria é antiga.
+- O personagem é um SWAT do Mixamo (licença Mixamo/Adobe, não CC0). A mira usa
+  IK procedural; em alguns ângulos a mão pode não encaixar perfeitamente na
+  pistola.
 - O quarteirão da rua ainda usa várias caixas de fachada combinadas com
   modelos de prédio; o foco do realismo ficou no saguão e nos props.
 - O céu noturno é um HDRI 1k escurecido; em telas muito grandes pode faltar

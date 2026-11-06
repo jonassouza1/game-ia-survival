@@ -1,18 +1,17 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 const clamp = THREE.MathUtils.clamp;
 
 // Câmera sobre o ombro e parâmetros de movimentação no estilo do remake.
-const CAM = { distFree: 3.1, distAim: 1.9, shoulderFree: 0.8, shoulderAim: 0.5,
+const CAM = { distFree: 3.1, distAim: 2.4, shoulderFree: 0.8, shoulderAim: 0.72,
   height: 1.62, fovFree: 58, fovAim: 38, pitchMin: -0.62, pitchMax: 0.5 };
-const SPEED = { jog: 2.75, walk: 1.42, aim: 1.18, accel: 4.7, brake: 7.8, turn: 5.1 };
+const SPEED = { jog: 2.75, walk: 1.42, run: 4.35, aim: 1.18, accel: 4.7, brake: 7.8, turn: 5.1 };
 const angleDiff = (a, b) => ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
 
 function makePistol() {
   const weapon = new THREE.Group();
-  weapon.name = 'LeonServicePistol';
+  weapon.name = 'ServicePistol';
   const steel = new THREE.MeshLambertMaterial({ color: 0x92948d, emissive: 0x111312, flatShading: true });
   const edge = new THREE.MeshLambertMaterial({ color: 0xb0a995, flatShading: true });
   const dark = new THREE.MeshLambertMaterial({ color: 0x303432, flatShading: true });
@@ -390,8 +389,6 @@ function buildModel() {
 export function createPlayer({ scene, world, camera, displayCamera, dom, audio, inventory, getFixedView, quality }) {
   const col = world.collisions;
   const model = buildModel();
-  // Prefer the supplied PS1-era mesh and atlas; keep the procedural model as a loading fallback.
-  const proceduralParts = [...model.root.children].filter((part) => part !== model.weapon);
   new GLTFLoader().load('/models/service_pistol/service_pistol_1k.gltf', ({ scene: pistol }) => {
     const visibleParts = new Set([
       'service_pistol_pistol_a',
@@ -422,68 +419,106 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   }, undefined, (error) => {
     console.error('Nao foi possivel carregar a pistola CC0; usando o modelo substituto.', error);
   });
-  const leonTexture = new THREE.TextureLoader().load('/models/leon/EMD48.png');
-  leonTexture.colorSpace = THREE.SRGBColorSpace;
-  leonTexture.magFilter = THREE.LinearFilter;
-  leonTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  leonTexture.anisotropy = 4;
-  leonTexture.generateMipmaps = true;
-  new OBJLoader().load('/models/leon/leon.obj', (asset) => {
-    const material = new THREE.MeshStandardMaterial({
-      map: leonTexture, color: 0xffffff, roughness: 0.74, metalness: 0.04,
-      side: THREE.DoubleSide,
-    });
-    material.envMapIntensity = 0.9;
-    asset.traverse((part) => {
-      if (!part.isMesh) return;
-      part.material = material;
-      part.castShadow = true;
-      part.receiveShadow = true;
-    });
-    const bounds = new THREE.Box3().setFromObject(asset);
-    const size = bounds.getSize(new THREE.Vector3());
-    const center = bounds.getCenter(new THREE.Vector3());
-    const scale = 1.82 / size.y;
-    asset.scale.setScalar(scale);
-    asset.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
-    asset.name = 'LeonPS1Mesh';
-    // The OBJ has no skeleton, but its original groups are split into head, arms and legs.
-    // Wrap each group at an approximate joint so the existing locomotion and aim can drive it.
-    const partByName = new Map(asset.children.map((part) => [part.name, part]));
-    const joint = (names, x, y, z = 0, parent = asset, parentOrigin = [0, 0, 0]) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x - parentOrigin[0], y - parentOrigin[1], z - parentOrigin[2]);
-      parent.add(pivot);
-      names.forEach((name) => {
-        const part = partByName.get(name);
-        if (!part) return;
-        asset.remove(part);
-        part.geometry.translate(-x, -y, -z);
-        pivot.add(part);
-      });
-      return pivot;
-    };
-    model.head = joint(['Object_8'], 0, 48, 0);
-    model.armR = joint(['Object_9'], -7.4, 45, 0);
-    model.armL = joint(['Object_12'], 7.4, 45, 0);
-    model.armR.userData.forearm = joint(['Object_10', 'Object_11'], -8.0, 35, 0, model.armR, [-7.4, 45, 0]);
-    model.armL.userData.forearm = joint(['Object_13', 'Object_14'], 8.0, 35, 0, model.armL, [7.4, 45, 0]);
-    model.legL = joint(['Object_2'], -3, 31, 0);
-    model.legR = joint(['Object_5'], 3, 31, 0);
-    model.kneeL = joint(['Object_6', 'Object_4'], -3, 20, 0, model.legL, [-3, 31, 0]);
-    model.kneeR = joint(['Object_3', 'Object_7'], 3, 20, 0, model.legR, [3, 31, 0]);
-    model.weapon.removeFromParent();
-    model.weapon.scale.setScalar(1.08 / scale);
-    model.weapon.position.set(-2.0, -10.3, 1.6);
-    model.armR.userData.forearm.add(model.weapon);
-    model.assetRig = true;
-    model.root.add(asset);
-    proceduralParts.forEach((part) => { part.visible = false; });
-    model.asset = asset;
-  }, undefined, (error) => {
-    console.error('Não foi possível carregar o modelo do Leon; usando o modelo substituto.', error);
-  });
   scene.add(model.root);
+
+  // ── Personagem real (SWAT Mixamo) + clips de caminhada do mesmo rig ──
+  // O boneco procedural continua como fallback caso o GLB não carregue.
+  const skinned = {
+    root: new THREE.Group(),
+    mixer: null,
+    actions: {},
+    bones: {},
+    ready: false,
+  };
+  skinned.root.name = 'PlayerSkinnedCharacter';
+  skinned.root.visible = false;
+  scene.add(skinned.root);
+  model.skinned = skinned;
+
+  const attachWeapon = (hand) => {
+    if (!hand) return;
+    const mount = new THREE.Group();
+    mount.name = 'WeaponMount';
+    mount.position.set(0, 0.035, 0.035);
+    mount.rotation.set(-Math.PI / 2, 0, 0);
+    hand.add(mount);
+    model.weapon.position.set(0, 0, 0);
+    model.weapon.rotation.set(0, 0, 0);
+    model.weapon.scale.setScalar(1);
+    mount.add(model.weapon);
+    skinned.weaponMount = mount;
+  };
+
+  new GLTFLoader().load('/models/character/swat.glb', (gltf) => {
+    const character = gltf.scene;
+    const bounds = new THREE.Box3().setFromObject(character);
+    const size = bounds.getSize(new THREE.Vector3());
+    if (!Number.isFinite(size.y) || size.y <= 0.001) {
+      console.error('Personagem SWAT com dimensões inválidas.');
+      return;
+    }
+    character.scale.setScalar(1.82 / size.y);
+    character.updateMatrixWorld(true);
+    const scaled = new THREE.Box3().setFromObject(character);
+    const center = scaled.getCenter(new THREE.Vector3());
+    character.position.set(-center.x, -scaled.min.y, -center.z);
+    character.traverse((object) => {
+      if (object.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+        object.frustumCulled = false; // o bounding box da malha com skin é impreciso
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) {
+          if (!material) continue;
+          material.envMapIntensity = 1.1;
+          if ('roughness' in material) material.roughness = Math.min(material.roughness ?? 1, 0.95);
+        }
+      }
+      if (object.isBone) skinned.bones[object.name] = object;
+    });
+    skinned.root.add(character);
+    skinned.mixer = new THREE.AnimationMixer(character);
+    if (gltf.animations[0]) {
+      const idle = skinned.mixer.clipAction(gltf.animations[0]);
+      idle.play();
+      skinned.actions.idle = idle;
+    }
+    attachWeapon(skinned.bones.mixamorigRightHand);
+    model.root.visible = false;
+    model.root = skinned.root;
+    skinned.root.visible = true;
+    skinned.ready = true;
+    character.userData.character = 'swat';
+
+    // Os clipes Walk/Run vêm do Soldier (mesmo esqueleto Mixamo). Ficam apenas
+    // as rotações: a translação do quadril vem em centímetros e arremessaria o
+    // personagem para fora do mapa.
+    new GLTFLoader().load('/models/character/Soldier.glb', (soldier) => {
+      for (const clip of soldier.animations) {
+        if (clip.name !== 'Walk' && clip.name !== 'Run') continue;
+        const tracks = [];
+        for (const track of clip.tracks) {
+          const dot = track.name.lastIndexOf('.');
+          if (dot < 0) continue;
+          const node = track.name.slice(0, dot);
+          const property = track.name.slice(dot + 1);
+          if (property !== 'quaternion' || /Hips$/.test(node)) continue;
+          tracks.push(new THREE.QuaternionKeyframeTrack(track.name, track.times, track.values));
+        }
+        if (!tracks.length) continue;
+        const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks);
+        const action = skinned.mixer.clipAction(retargeted);
+        action.play();
+        action.setEffectiveWeight(0);
+        skinned.actions[clip.name.toLowerCase()] = action;
+      }
+    }, undefined, (error) => {
+      console.warn('Clipes de caminhada indisponíveis; mantendo idle.', error);
+    });
+  }, undefined, (error) => {
+    console.error('Não foi possível carregar o personagem SWAT; usando o boneco procedural.', error);
+  });
+
   const occlusionGroup = new THREE.Group();
   occlusionGroup.renderOrder = 10;
   scene.add(occlusionGroup);
@@ -747,7 +782,9 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     let wx = fx * f + rx * s, wz = fz * f + rz * s;
     const len = Math.hypot(wx, wz);
     if (len > 0) { wx /= len; wz /= len; }
-    let max = S.aiming ? SPEED.aim : (keys.ShiftLeft || keys.ShiftRight ? SPEED.walk : SPEED.jog);
+    const sprinting = !S.aiming && (keys.ShiftLeft || keys.ShiftRight);
+    const walking = !S.aiming && keys.KeyC;
+    let max = S.aiming ? SPEED.aim : (walking ? SPEED.walk : (sprinting ? SPEED.run : SPEED.jog));
     if (S.aiming && f < 0) max *= 0.8;
     const hasInput = len > 0;
     const targetX = wx * max * (hasInput ? 1 : 0);
@@ -781,6 +818,166 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     S.aimT += ((S.aiming ? 1 : 0) - S.aimT) * (1 - Math.exp(-dt * 11));
   }
 
+  const UP = new THREE.Vector3(0, 1, 0);
+  const characterRight = new THREE.Vector3();
+  const aimForward = new THREE.Vector3();
+  const aimTarget = new THREE.Vector3();
+  const supportTarget = new THREE.Vector3();
+  const ikShoulder = new THREE.Vector3();
+  const ikElbow = new THREE.Vector3();
+  const ikHand = new THREE.Vector3();
+  const ikDir = new THREE.Vector3();
+  const ikPerp = new THREE.Vector3();
+  const ikElbowTarget = new THREE.Vector3();
+  const bonePosition = new THREE.Vector3();
+  const childPosition = new THREE.Vector3();
+  const currentDirection = new THREE.Vector3();
+  const desiredDirection = new THREE.Vector3();
+  const aimDir = new THREE.Vector3();
+  const aimRight = new THREE.Vector3();
+  const aimUp = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+  const qCurrent = new THREE.Quaternion();
+  const qWorld = new THREE.Quaternion();
+  const qParent = new THREE.Quaternion();
+  const qAim = new THREE.Quaternion();
+  const qHand = new THREE.Quaternion();
+  const qArmStart = new THREE.Quaternion();
+  const qForeStart = new THREE.Quaternion();
+  const qIk = new THREE.Quaternion();
+  const defaultMountQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+
+  // Gira um osso para que o próximo osso da cadeia aponte para o alvo.
+  function aimBoneAt(bone, child, target) {
+    bone.getWorldPosition(bonePosition);
+    child.getWorldPosition(childPosition);
+    currentDirection.copy(childPosition).sub(bonePosition).normalize();
+    desiredDirection.copy(target).sub(bonePosition).normalize();
+    qCurrent.setFromUnitVectors(currentDirection, desiredDirection);
+    bone.getWorldQuaternion(qWorld);
+    qWorld.premultiply(qCurrent);
+    bone.parent.getWorldQuaternion(qParent).invert();
+    bone.quaternion.copy(qParent.multiply(qWorld));
+    bone.updateWorldMatrix(true, true);
+  }
+
+  // IK analítico de dois ossos para colocar a mão no alvo mantendo o cotovelo
+  // para baixo/lado, em vez de tentar adivinhar ângulos de Euler do Mixamo.
+  function solveTwoBone(arm, forearm, hand, target) {
+    arm.getWorldPosition(ikShoulder);
+    forearm.getWorldPosition(ikElbow);
+    hand.getWorldPosition(ikHand);
+    const upperLength = ikShoulder.distanceTo(ikElbow);
+    const foreLength = ikElbow.distanceTo(ikHand);
+    ikDir.copy(target).sub(ikShoulder);
+    const reach = clamp(ikDir.length(), Math.abs(upperLength - foreLength) + 0.002, upperLength + foreLength - 0.002);
+    ikDir.normalize();
+    const along = (reach * reach + upperLength * upperLength - foreLength * foreLength) / (2 * reach);
+    const height = Math.sqrt(Math.max(0.0001, upperLength * upperLength - along * along));
+    ikPerp.crossVectors(ikDir, characterRight);
+    if (ikPerp.lengthSq() < 0.001) ikPerp.set(0, -1, 0);
+    ikPerp.normalize();
+    ikElbowTarget.copy(ikShoulder).addScaledVector(ikDir, along).addScaledVector(ikPerp, height);
+    aimBoneAt(arm, forearm, ikElbowTarget);
+    aimBoneAt(forearm, hand, target);
+  }
+  function updateSkinnedCharacter(dt, strideBob, amp, reload) {
+    const sk = model.skinned;
+    const root = model.root;
+    root.position.set(S.x, S.y + strideBob, S.z);
+    root.rotation.set(-0.018 * amp - 0.012 * S.aimT, S.bodyYaw, S.gaitLean * 0.5);
+
+    const speed = S.speed;
+    let idleWeight, walkWeight, runWeight;
+    if (speed < 0.08) {
+      idleWeight = 1; walkWeight = 0; runWeight = 0;
+    } else if (speed <= 1.8) {
+      const t = clamp(speed / 1.8, 0, 1);
+      idleWeight = 1 - t; walkWeight = t; runWeight = 0;
+    } else {
+      const t = clamp((speed - 1.8) / 1.1, 0, 1);
+      idleWeight = 0; walkWeight = 1 - t; runWeight = t;
+    }
+    const actions = sk.actions;
+    if (actions.idle) actions.idle.setEffectiveWeight(idleWeight);
+    if (actions.walk) {
+      actions.walk.setEffectiveWeight(walkWeight);
+      actions.walk.timeScale = clamp(speed / 1.42, 0.6, 1.6);
+    }
+    if (actions.run) {
+      actions.run.setEffectiveWeight(runWeight);
+      actions.run.timeScale = clamp(speed / 2.75, 0.7, 1.4);
+    }
+    sk.mixer.update(dt);
+
+    characterRight.set(-Math.cos(S.bodyYaw), 0, Math.sin(S.bodyYaw));
+    aimForward.set(Math.sin(S.bodyYaw), 0, Math.cos(S.bodyYaw));
+    const b = sk.bones;
+    const aim = S.aimT;
+    // Balanço de braços extra para a caminhada não ficar com os braços colados.
+    if (aim < 0.5 && amp > 0.05) {
+      const swing = Math.sin(S.phase * 2) * 0.22 * amp * (1 - aim);
+      b.mixamorigLeftArm?.rotateOnWorldAxis(characterRight, swing);
+      b.mixamorigRightArm?.rotateOnWorldAxis(characterRight, -swing);
+      b.mixamorigSpine2?.rotateOnWorldAxis(UP, -swing * 0.12);
+    }
+    if (aim > 0.001 && b.mixamorigRightArm && b.mixamorigRightForeArm && b.mixamorigRightHand) {
+      aimTarget.set(
+        S.x + aimForward.x * 0.5 + characterRight.x * 0.15,
+        S.y + 1.36 + Math.sin(S.pitch) * 0.32,
+        S.z + aimForward.z * 0.5 + characterRight.z * 0.15,
+      );
+      supportTarget.copy(aimTarget)
+        .addScaledVector(characterRight, -0.1)
+        .addScaledVector(aimForward, -0.03);
+
+      qArmStart.copy(b.mixamorigRightArm.quaternion);
+      qForeStart.copy(b.mixamorigRightForeArm.quaternion);
+      solveTwoBone(b.mixamorigRightArm, b.mixamorigRightForeArm, b.mixamorigRightHand, aimTarget);
+      qIk.copy(b.mixamorigRightArm.quaternion);
+      b.mixamorigRightArm.quaternion.slerpQuaternions(qArmStart, qIk, aim);
+      qIk.copy(b.mixamorigRightForeArm.quaternion);
+      b.mixamorigRightForeArm.quaternion.slerpQuaternions(qForeStart, qIk, aim);
+      b.mixamorigRightArm.updateWorldMatrix(true, true);
+
+      if (b.mixamorigLeftArm && b.mixamorigLeftForeArm && b.mixamorigLeftHand) {
+        qArmStart.copy(b.mixamorigLeftArm.quaternion);
+        qForeStart.copy(b.mixamorigLeftForeArm.quaternion);
+        if (reload > 0.12) {
+          b.mixamorigLeftArm.rotateOnWorldAxis(characterRight, -0.45 * reload);
+          b.mixamorigLeftForeArm.rotateOnWorldAxis(characterRight, 0.55 * reload);
+        } else {
+          solveTwoBone(b.mixamorigLeftArm, b.mixamorigLeftForeArm, b.mixamorigLeftHand, supportTarget);
+          qIk.copy(b.mixamorigLeftArm.quaternion);
+          b.mixamorigLeftArm.quaternion.slerpQuaternions(qArmStart, qIk, aim);
+          qIk.copy(b.mixamorigLeftForeArm.quaternion);
+          b.mixamorigLeftForeArm.quaternion.slerpQuaternions(qForeStart, qIk, aim);
+        }
+      }
+
+      b.mixamorigSpine2?.rotateOnWorldAxis(characterRight, 0.06 * aim);
+      b.mixamorigHead?.rotateOnWorldAxis(characterRight, -S.pitch * 0.2 * aim);
+
+      if (sk.weaponMount && b.mixamorigRightHand) {
+        aimDir.set(
+          Math.sin(S.yaw) * Math.cos(S.pitch),
+          Math.sin(S.pitch),
+          Math.cos(S.yaw) * Math.cos(S.pitch),
+        ).normalize();
+        aimRight.crossVectors(UP, aimDir);
+        if (aimRight.lengthSq() < 0.001) aimRight.set(1, 0, 0);
+        aimRight.normalize();
+        aimUp.crossVectors(aimDir, aimRight).normalize();
+        basis.makeBasis(aimRight, aimUp, aimDir);
+        qAim.setFromRotationMatrix(basis);
+        b.mixamorigRightHand.getWorldQuaternion(qHand).invert();
+        qAim.premultiply(qHand);
+        sk.weaponMount.quaternion.copy(defaultMountQuat).slerp(qAim, aim);
+        if (S.recoil > 0) sk.weaponMount.rotateX(-S.recoil * 0.14);
+      }
+    }
+  }
+
   function animateModel(dt) {
     const m = model;
     S.recoil = Math.max(0, S.recoil - dt * 4.8);
@@ -797,6 +994,10 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     const amp = clamp(S.speed / SPEED.jog, 0, 1);
     const sw = Math.sin(S.phase);
     const reload = S.reloadTime > 0 ? Math.sin((1 - S.reloadTime / 2.15) * Math.PI) : 0;
+    if (m.skinned?.ready && m.skinned.mixer) {
+      updateSkinnedCharacter(dt, strideBob, amp, reload);
+      return;
+    }
     if (m.assetRig) {
       const idle = Math.sin(performance.now() * 0.00125) * 0.006;
       const stepLiftL = Math.max(0, -sw);
@@ -926,7 +1127,9 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     camera.lookAt(tmp);
     cameraFill.position.copy(camera.position).addScaledVector(dir, 0.45);
     cameraFill.position.y += 0.15;
-    const fov = THREE.MathUtils.lerp(CAM.fovFree, CAM.fovAim, a);
+    camera.rotateZ(S.gaitLean * 0.55 + Math.sin(S.phase * 2) * S.speed * 0.0022);
+    const sprintFov = clamp((S.speed - 2.9) * 0.9, 0, 3.2);
+    const fov = THREE.MathUtils.lerp(CAM.fovFree, CAM.fovAim, a) + sprintFov;
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     model.root.visible = full * S.camFrac > 0.75;
   }

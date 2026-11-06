@@ -31,8 +31,8 @@ export function createInventory({ element, onToggle = () => {}, onReload = () =>
   function render() {
     const current = items.find((item) => item.id === selected) || items[0];
     element.innerHTML = `
-      <section class="inventory-window" aria-label="Inventário de Leon">
-        <header class="inventory-header"><span>R.P.D. <b>ITEM BOX</b></span><span>LEON S. KENNEDY</span></header>
+      <section class="inventory-window" aria-label="Inventário">
+        <header class="inventory-header"><span>R.P.D. <b>ITEM BOX</b></span><span>R.P.D. TACTICAL</span></header>
         <div class="inventory-content">
           <section class="inventory-left">
             <div class="inventory-label">INVENTÁRIO <small>03 / 12</small></div>

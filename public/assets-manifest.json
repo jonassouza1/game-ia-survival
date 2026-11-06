@@ -199,5 +199,19 @@
       "id": "street_lamp_01",
       "path": "/models/polyhaven/street_lamp_01/street_lamp_01.gltf"
     }
+  ],
+  "characters": [
+    {
+      "id": "swat",
+      "path": "/models/character/swat.glb",
+      "source": "Mixamo, via biblioteca de personagens three.ws",
+      "license": "Mixamo (Adobe)"
+    },
+    {
+      "id": "Soldier",
+      "path": "/models/character/Soldier.glb",
+      "source": "three.js examples / Mixamo",
+      "license": "Mixamo (Adobe)"
+    }
   ]
 }
