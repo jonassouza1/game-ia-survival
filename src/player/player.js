@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { retargetMixamoClip } from './retarget.js';
+import { createGait } from './locomotion.js';
 
 const clamp = THREE.MathUtils.clamp;
 
@@ -490,28 +492,33 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     skinned.ready = true;
     character.userData.character = 'swat';
 
-    // Os clipes Walk/Run vêm do Soldier (mesmo esqueleto Mixamo). Ficam apenas
-    // as rotações: a translação do quadril vem em centímetros e arremessaria o
-    // personagem para fora do mapa.
+    // Os clipes Walk/Run vêm do Soldier.glb (também Mixamo, mas com outra orientação
+    // de ossos, outra escala e olhando para o lado oposto). Ver retarget.js: o
+    // movimento é convertido osso a osso para o esqueleto do SWAT, incluindo a
+    // rotação e o deslocamento do quadril (Hips).
     new GLTFLoader().load('/models/character/Soldier.glb', (soldier) => {
-      for (const clip of soldier.animations) {
-        if (clip.name !== 'Walk' && clip.name !== 'Run') continue;
-        const tracks = [];
-        for (const track of clip.tracks) {
-          const dot = track.name.lastIndexOf('.');
-          if (dot < 0) continue;
-          const node = track.name.slice(0, dot);
-          const property = track.name.slice(dot + 1);
-          if (property !== 'quaternion' || /Hips$/.test(node)) continue;
-          tracks.push(new THREE.QuaternionKeyframeTrack(track.name, track.times, track.values));
+      const locomotion = {};
+      for (const name of ['Walk', 'Run']) {
+        const source = soldier.animations.find((clip) => clip.name === name);
+        if (!source) continue;
+        try {
+          const result = retargetMixamoClip(soldier.scene, character, source);
+          const action = skinned.mixer.clipAction(result.clip);
+          action.timeScale = 0; // a fase é definida pela distância percorrida (locomotion.js)
+          action.play();
+          action.setEffectiveWeight(0);
+          skinned.actions[name.toLowerCase()] = action;
+          locomotion[name.toLowerCase()] = {
+            duration: result.clip.duration,
+            strike: result.strikePhase,
+            // velocidade (m/s no mundo do jogo) em que o pé de apoio não escorrega
+            speed: result.groundSpeed * character.scale.x,
+          };
+        } catch (error) {
+          console.warn(`Não foi possível adaptar o clipe ${name}.`, error);
         }
-        if (!tracks.length) continue;
-        const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks);
-        const action = skinned.mixer.clipAction(retargeted);
-        action.play();
-        action.setEffectiveWeight(0);
-        skinned.actions[clip.name.toLowerCase()] = action;
       }
+      if (locomotion.walk && locomotion.run) skinned.gait = createGait(locomotion);
     }, undefined, (error) => {
       console.warn('Clipes de caminhada indisponíveis; mantendo idle.', error);
     });
@@ -847,6 +854,18 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   const qIk = new THREE.Quaternion();
   const defaultMountQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
+  // Gira um osso em torno de um eixo do mundo. Object3D.rotateOnWorldAxis assume
+  // pai sem rotação, o que não vale para ossos Mixamo (o pai e o próprio
+  // personagem estão girados), então o eixo é convertido para o espaço do pai.
+  const worldAxisLocal = new THREE.Vector3();
+  const qWorldAxis = new THREE.Quaternion();
+  const qWorldParent = new THREE.Quaternion();
+  function rotateBoneOnWorldAxis(bone, axis, angle) {
+    bone.parent.getWorldQuaternion(qWorldParent).invert();
+    worldAxisLocal.copy(axis).applyQuaternion(qWorldParent);
+    bone.quaternion.premultiply(qWorldAxis.setFromAxisAngle(worldAxisLocal, angle));
+  }
+
   // Gira um osso para que o próximo osso da cadeia aponte para o alvo.
   function aimBoneAt(bone, child, target) {
     bone.getWorldPosition(bonePosition);
@@ -884,29 +903,24 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   function updateSkinnedCharacter(dt, strideBob, amp, reload) {
     const sk = model.skinned;
     const root = model.root;
-    root.position.set(S.x, S.y + strideBob, S.z);
+    // A oscilação vertical do corpo vem do próprio clipe (Hips), então não se soma strideBob.
+    root.position.set(S.x, S.y, S.z);
     root.rotation.set(-0.018 * amp - 0.012 * S.aimT, S.bodyYaw, S.gaitLean * 0.5);
 
-    const speed = S.speed;
-    let idleWeight, walkWeight, runWeight;
-    if (speed < 0.08) {
-      idleWeight = 1; walkWeight = 0; runWeight = 0;
-    } else if (speed <= 1.8) {
-      const t = clamp(speed / 1.8, 0, 1);
-      idleWeight = 1 - t; walkWeight = t; runWeight = 0;
-    } else {
-      const t = clamp((speed - 1.8) / 1.1, 0, 1);
-      idleWeight = 0; walkWeight = 1 - t; runWeight = t;
-    }
     const actions = sk.actions;
-    if (actions.idle) actions.idle.setEffectiveWeight(idleWeight);
-    if (actions.walk) {
-      actions.walk.setEffectiveWeight(walkWeight);
-      actions.walk.timeScale = clamp(speed / 1.42, 0.6, 1.6);
-    }
-    if (actions.run) {
-      actions.run.setEffectiveWeight(runWeight);
-      actions.run.timeScale = clamp(speed / 2.75, 0.7, 1.4);
+    if (sk.gait) {
+      // Velocidade na direção em que o corpo olha (negativa = de costas, ex.: mirando).
+      const along = S.vx * Math.sin(S.bodyYaw) + S.vz * Math.cos(S.bodyYaw);
+      const gait = sk.gait.update(dt, S.speed, along);
+      if (actions.idle) actions.idle.setEffectiveWeight(gait.idle);
+      actions.walk.setEffectiveWeight(gait.walk);
+      actions.run.setEffectiveWeight(gait.run);
+      actions.walk.time = gait.walkTime;
+      actions.run.time = gait.runTime;
+      // Câmera acompanha o mesmo passo (o balanço é mais baixo no apoio do pé esquerdo).
+      S.phase = gait.phase * Math.PI * 2 - Math.PI / 4;
+    } else if (actions.idle) {
+      actions.idle.setEffectiveWeight(1);
     }
     sk.mixer.update(dt);
 
@@ -914,13 +928,6 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     aimForward.set(Math.sin(S.bodyYaw), 0, Math.cos(S.bodyYaw));
     const b = sk.bones;
     const aim = S.aimT;
-    // Balanço de braços extra para a caminhada não ficar com os braços colados.
-    if (aim < 0.5 && amp > 0.05) {
-      const swing = Math.sin(S.phase * 2) * 0.22 * amp * (1 - aim);
-      b.mixamorigLeftArm?.rotateOnWorldAxis(characterRight, swing);
-      b.mixamorigRightArm?.rotateOnWorldAxis(characterRight, -swing);
-      b.mixamorigSpine2?.rotateOnWorldAxis(UP, -swing * 0.12);
-    }
     if (aim > 0.001 && b.mixamorigRightArm && b.mixamorigRightForeArm && b.mixamorigRightHand) {
       aimTarget.set(
         S.x + aimForward.x * 0.5 + characterRight.x * 0.15,
@@ -944,8 +951,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
         qArmStart.copy(b.mixamorigLeftArm.quaternion);
         qForeStart.copy(b.mixamorigLeftForeArm.quaternion);
         if (reload > 0.12) {
-          b.mixamorigLeftArm.rotateOnWorldAxis(characterRight, -0.45 * reload);
-          b.mixamorigLeftForeArm.rotateOnWorldAxis(characterRight, 0.55 * reload);
+          rotateBoneOnWorldAxis(b.mixamorigLeftArm, characterRight, -0.45 * reload);
+          rotateBoneOnWorldAxis(b.mixamorigLeftForeArm, characterRight, 0.55 * reload);
         } else {
           solveTwoBone(b.mixamorigLeftArm, b.mixamorigLeftForeArm, b.mixamorigLeftHand, supportTarget);
           qIk.copy(b.mixamorigLeftArm.quaternion);
@@ -955,8 +962,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
         }
       }
 
-      b.mixamorigSpine2?.rotateOnWorldAxis(characterRight, 0.06 * aim);
-      b.mixamorigHead?.rotateOnWorldAxis(characterRight, -S.pitch * 0.2 * aim);
+      if (b.mixamorigSpine2) rotateBoneOnWorldAxis(b.mixamorigSpine2, characterRight, 0.06 * aim);
+      if (b.mixamorigHead) rotateBoneOnWorldAxis(b.mixamorigHead, characterRight, -S.pitch * 0.2 * aim);
 
       if (sk.weaponMount && b.mixamorigRightHand) {
         aimDir.set(
