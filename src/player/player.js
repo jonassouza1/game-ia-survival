@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { retargetMixamoClip } from './retarget.js';
 import { createGait } from './locomotion.js';
+import { createSidearm, SIDEARM } from './sidearm.js';
 
 const clamp = THREE.MathUtils.clamp;
 
@@ -391,36 +392,40 @@ function buildModel() {
 export function createPlayer({ scene, world, camera, displayCamera, dom, audio, inventory, getFixedView, quality }) {
   const col = world.collisions;
   const model = buildModel();
-  new GLTFLoader().load('/models/service_pistol/service_pistol_1k.gltf', ({ scene: pistol }) => {
-    const visibleParts = new Set([
-      'service_pistol_pistol_a',
-      'service_pistol_slide_a',
-      'service_pistol_hammer_a',
-      'service_pistol_trigger_a',
-    ]);
-    pistol.children.forEach((part) => { part.visible = visibleParts.has(part.name); });
-    pistol.rotation.y = -Math.PI / 2;
-    pistol.name = 'ServicePistolCC0';
-    pistol.traverse((part) => {
-      if (!part.isMesh || !part.visible) return;
-      part.castShadow = true;
-      part.receiveShadow = true;
-    });
-    for (const part of [...model.weapon.children]) {
-      if (part === model.muzzleFlash) continue;
-      part.traverse((object) => {
-        object.geometry?.dispose();
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
-        materials.forEach((material) => material?.dispose());
+  // A pistola CC0 só é usada pelo boneco procedural de reserva (se o swat.glb falhar).
+  // O SWAT usa a pistola do próprio coldre (ver sidearm.js).
+  function loadFallbackPistol() {
+    new GLTFLoader().load('/models/service_pistol/service_pistol_1k.gltf', ({ scene: pistol }) => {
+      const visibleParts = new Set([
+        'service_pistol_pistol_a',
+        'service_pistol_slide_a',
+        'service_pistol_hammer_a',
+        'service_pistol_trigger_a',
+      ]);
+      pistol.children.forEach((part) => { part.visible = visibleParts.has(part.name); });
+      pistol.rotation.y = -Math.PI / 2;
+      pistol.name = 'ServicePistolCC0';
+      pistol.traverse((part) => {
+        if (!part.isMesh || !part.visible) return;
+        part.castShadow = true;
+        part.receiveShadow = true;
       });
-      part.removeFromParent();
-    }
-    model.weapon.add(pistol);
-    model.muzzleLocal.set(0, 0.008, 0.176);
-    model.muzzleFlash.position.set(0, 0.008, 0.204);
-  }, undefined, (error) => {
-    console.error('Nao foi possivel carregar a pistola CC0; usando o modelo substituto.', error);
-  });
+      for (const part of [...model.weapon.children]) {
+        if (part === model.muzzleFlash) continue;
+        part.traverse((object) => {
+          object.geometry?.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material?.dispose());
+        });
+        part.removeFromParent();
+      }
+      model.weapon.add(pistol);
+      model.muzzleLocal.set(0, 0.008, 0.176);
+      model.muzzleFlash.position.set(0, 0.008, 0.204);
+    }, undefined, (error) => {
+      console.error('Nao foi possivel carregar a pistola CC0; usando o modelo substituto.', error);
+    });
+  }
   scene.add(model.root);
 
   // ── Personagem real (SWAT Mixamo) + clips de caminhada do mesmo rig ──
@@ -436,20 +441,6 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   skinned.root.visible = false;
   scene.add(skinned.root);
   model.skinned = skinned;
-
-  const attachWeapon = (hand) => {
-    if (!hand) return;
-    const mount = new THREE.Group();
-    mount.name = 'WeaponMount';
-    mount.position.set(0, 0.035, 0.035);
-    mount.rotation.set(-Math.PI / 2, 0, 0);
-    hand.add(mount);
-    model.weapon.position.set(0, 0, 0);
-    model.weapon.rotation.set(0, 0, 0);
-    model.weapon.scale.setScalar(1);
-    mount.add(model.weapon);
-    skinned.weaponMount = mount;
-  };
 
   new GLTFLoader().load('/models/character/swat.glb', (gltf) => {
     const character = gltf.scene;
@@ -485,7 +476,16 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       idle.play();
       skinned.actions.idle = idle;
     }
-    attachWeapon(skinned.bones.mixamorigRightHand);
+    // Pistola do coldre (nó separado pelo tools/split-holster-pistol.mjs).
+    const holsterPistol = character.getObjectByName('Soldier_pistol');
+    if (holsterPistol) {
+      skinned.sidearm = createSidearm({ character, bones: skinned.bones, pistol: holsterPistol });
+      model.weapon = holsterPistol;
+      model.muzzleFlash = skinned.sidearm.muzzleFlash;
+      model.muzzleLocal.copy(SIDEARM.muzzle);
+    } else {
+      console.warn('swat.glb sem o nó Soldier_pistol: rode `npm run split-pistol`.');
+    }
     model.root.visible = false;
     model.root = skinned.root;
     skinned.root.visible = true;
@@ -524,6 +524,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     });
   }, undefined, (error) => {
     console.error('Não foi possível carregar o personagem SWAT; usando o boneco procedural.', error);
+    loadFallbackPistol();
   });
 
   const occlusionGroup = new THREE.Group();
@@ -572,6 +573,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   const keys = {};
   function shoot() {
     if (!S.active || S.paused || !S.aiming || S.reloadTime > 0) return;
+    const sidearm = model.skinned?.sidearm;
+    if (sidearm && (!sidearm.drawn || S.aimT < 0.8)) return; // ainda sacando a arma
     if (!inventory?.consumeRound()) { audio?.emptyGun?.(); return; }
     S.recoil = 1;
     model.muzzleTime = 0.075;
@@ -639,7 +642,9 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     model.root.position.set(S.x, S.y, S.z);
     model.root.scale.setScalar(1);
     model.root.updateMatrixWorld(true);
-    model.weapon.localToWorld(muzzlePoint.copy(model.muzzleLocal));
+    const sidearm = model.skinned?.sidearm;
+    if (sidearm) sidearm.muzzleWorld(muzzlePoint);
+    else model.weapon.localToWorld(muzzlePoint.copy(model.muzzleLocal));
     model.root.position.copy(displayPosition);
     model.root.scale.copy(displayScale);
     model.root.updateMatrixWorld(true);
@@ -825,81 +830,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     S.aimT += ((S.aiming ? 1 : 0) - S.aimT) * (1 - Math.exp(-dt * 11));
   }
 
-  const UP = new THREE.Vector3(0, 1, 0);
-  const characterRight = new THREE.Vector3();
-  const aimForward = new THREE.Vector3();
-  const aimTarget = new THREE.Vector3();
-  const supportTarget = new THREE.Vector3();
-  const ikShoulder = new THREE.Vector3();
-  const ikElbow = new THREE.Vector3();
-  const ikHand = new THREE.Vector3();
-  const ikDir = new THREE.Vector3();
-  const ikPerp = new THREE.Vector3();
-  const ikElbowTarget = new THREE.Vector3();
-  const bonePosition = new THREE.Vector3();
-  const childPosition = new THREE.Vector3();
-  const currentDirection = new THREE.Vector3();
-  const desiredDirection = new THREE.Vector3();
-  const aimDir = new THREE.Vector3();
-  const aimRight = new THREE.Vector3();
-  const aimUp = new THREE.Vector3();
-  const basis = new THREE.Matrix4();
-  const qCurrent = new THREE.Quaternion();
-  const qWorld = new THREE.Quaternion();
-  const qParent = new THREE.Quaternion();
-  const qAim = new THREE.Quaternion();
-  const qHand = new THREE.Quaternion();
-  const qArmStart = new THREE.Quaternion();
-  const qForeStart = new THREE.Quaternion();
-  const qIk = new THREE.Quaternion();
-  const defaultMountQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
-  // Gira um osso em torno de um eixo do mundo. Object3D.rotateOnWorldAxis assume
-  // pai sem rotação, o que não vale para ossos Mixamo (o pai e o próprio
-  // personagem estão girados), então o eixo é convertido para o espaço do pai.
-  const worldAxisLocal = new THREE.Vector3();
-  const qWorldAxis = new THREE.Quaternion();
-  const qWorldParent = new THREE.Quaternion();
-  function rotateBoneOnWorldAxis(bone, axis, angle) {
-    bone.parent.getWorldQuaternion(qWorldParent).invert();
-    worldAxisLocal.copy(axis).applyQuaternion(qWorldParent);
-    bone.quaternion.premultiply(qWorldAxis.setFromAxisAngle(worldAxisLocal, angle));
-  }
-
-  // Gira um osso para que o próximo osso da cadeia aponte para o alvo.
-  function aimBoneAt(bone, child, target) {
-    bone.getWorldPosition(bonePosition);
-    child.getWorldPosition(childPosition);
-    currentDirection.copy(childPosition).sub(bonePosition).normalize();
-    desiredDirection.copy(target).sub(bonePosition).normalize();
-    qCurrent.setFromUnitVectors(currentDirection, desiredDirection);
-    bone.getWorldQuaternion(qWorld);
-    qWorld.premultiply(qCurrent);
-    bone.parent.getWorldQuaternion(qParent).invert();
-    bone.quaternion.copy(qParent.multiply(qWorld));
-    bone.updateWorldMatrix(true, true);
-  }
-
-  // IK analítico de dois ossos para colocar a mão no alvo mantendo o cotovelo
-  // para baixo/lado, em vez de tentar adivinhar ângulos de Euler do Mixamo.
-  function solveTwoBone(arm, forearm, hand, target) {
-    arm.getWorldPosition(ikShoulder);
-    forearm.getWorldPosition(ikElbow);
-    hand.getWorldPosition(ikHand);
-    const upperLength = ikShoulder.distanceTo(ikElbow);
-    const foreLength = ikElbow.distanceTo(ikHand);
-    ikDir.copy(target).sub(ikShoulder);
-    const reach = clamp(ikDir.length(), Math.abs(upperLength - foreLength) + 0.002, upperLength + foreLength - 0.002);
-    ikDir.normalize();
-    const along = (reach * reach + upperLength * upperLength - foreLength * foreLength) / (2 * reach);
-    const height = Math.sqrt(Math.max(0.0001, upperLength * upperLength - along * along));
-    ikPerp.crossVectors(ikDir, characterRight);
-    if (ikPerp.lengthSq() < 0.001) ikPerp.set(0, -1, 0);
-    ikPerp.normalize();
-    ikElbowTarget.copy(ikShoulder).addScaledVector(ikDir, along).addScaledVector(ikPerp, height);
-    aimBoneAt(arm, forearm, ikElbowTarget);
-    aimBoneAt(forearm, hand, target);
-  }
   function updateSkinnedCharacter(dt, strideBob, amp, reload) {
     const sk = model.skinned;
     const root = model.root;
@@ -924,64 +855,11 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     }
     sk.mixer.update(dt);
 
-    characterRight.set(-Math.cos(S.bodyYaw), 0, Math.sin(S.bodyYaw));
-    aimForward.set(Math.sin(S.bodyYaw), 0, Math.cos(S.bodyYaw));
-    const b = sk.bones;
-    const aim = S.aimT;
-    if (aim > 0.001 && b.mixamorigRightArm && b.mixamorigRightForeArm && b.mixamorigRightHand) {
-      aimTarget.set(
-        S.x + aimForward.x * 0.5 + characterRight.x * 0.15,
-        S.y + 1.36 + Math.sin(S.pitch) * 0.32,
-        S.z + aimForward.z * 0.5 + characterRight.z * 0.15,
-      );
-      supportTarget.copy(aimTarget)
-        .addScaledVector(characterRight, -0.1)
-        .addScaledVector(aimForward, -0.03);
-
-      qArmStart.copy(b.mixamorigRightArm.quaternion);
-      qForeStart.copy(b.mixamorigRightForeArm.quaternion);
-      solveTwoBone(b.mixamorigRightArm, b.mixamorigRightForeArm, b.mixamorigRightHand, aimTarget);
-      qIk.copy(b.mixamorigRightArm.quaternion);
-      b.mixamorigRightArm.quaternion.slerpQuaternions(qArmStart, qIk, aim);
-      qIk.copy(b.mixamorigRightForeArm.quaternion);
-      b.mixamorigRightForeArm.quaternion.slerpQuaternions(qForeStart, qIk, aim);
-      b.mixamorigRightArm.updateWorldMatrix(true, true);
-
-      if (b.mixamorigLeftArm && b.mixamorigLeftForeArm && b.mixamorigLeftHand) {
-        qArmStart.copy(b.mixamorigLeftArm.quaternion);
-        qForeStart.copy(b.mixamorigLeftForeArm.quaternion);
-        if (reload > 0.12) {
-          rotateBoneOnWorldAxis(b.mixamorigLeftArm, characterRight, -0.45 * reload);
-          rotateBoneOnWorldAxis(b.mixamorigLeftForeArm, characterRight, 0.55 * reload);
-        } else {
-          solveTwoBone(b.mixamorigLeftArm, b.mixamorigLeftForeArm, b.mixamorigLeftHand, supportTarget);
-          qIk.copy(b.mixamorigLeftArm.quaternion);
-          b.mixamorigLeftArm.quaternion.slerpQuaternions(qArmStart, qIk, aim);
-          qIk.copy(b.mixamorigLeftForeArm.quaternion);
-          b.mixamorigLeftForeArm.quaternion.slerpQuaternions(qForeStart, qIk, aim);
-        }
-      }
-
-      if (b.mixamorigSpine2) rotateBoneOnWorldAxis(b.mixamorigSpine2, characterRight, 0.06 * aim);
-      if (b.mixamorigHead) rotateBoneOnWorldAxis(b.mixamorigHead, characterRight, -S.pitch * 0.2 * aim);
-
-      if (sk.weaponMount && b.mixamorigRightHand) {
-        aimDir.set(
-          Math.sin(S.yaw) * Math.cos(S.pitch),
-          Math.sin(S.pitch),
-          Math.cos(S.yaw) * Math.cos(S.pitch),
-        ).normalize();
-        aimRight.crossVectors(UP, aimDir);
-        if (aimRight.lengthSq() < 0.001) aimRight.set(1, 0, 0);
-        aimRight.normalize();
-        aimUp.crossVectors(aimDir, aimRight).normalize();
-        basis.makeBasis(aimRight, aimUp, aimDir);
-        qAim.setFromRotationMatrix(basis);
-        b.mixamorigRightHand.getWorldQuaternion(qHand).invert();
-        qAim.premultiply(qHand);
-        sk.weaponMount.quaternion.copy(defaultMountQuat).slerp(qAim, aim);
-        if (S.recoil > 0) sk.weaponMount.rotateX(-S.recoil * 0.14);
-      }
+    if (sk.sidearm) {
+      sk.sidearm.update(dt, {
+        x: S.x, y: S.y, z: S.z, bodyYaw: S.bodyYaw, yaw: S.yaw, pitch: S.pitch,
+        aimT: S.aimT, recoil: S.recoil, reloadTime: S.reloadTime,
+      }, S.aiming || S.reloadTime > 0);
     }
   }
 
@@ -1174,11 +1052,12 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       S.paused = paused;
       if (paused) { S.aiming = false; S.vx = 0; S.vz = 0; S.speed = 0; }
     },
-    startReload() { S.reloadTime = 2.15; S.aiming = false; },
+    startReload() { S.reloadTime = SIDEARM.reloadTime; },
     teleport(spawn) {
       S.x = spawn.x; S.y = spawn.y; S.z = spawn.z;
       S.yaw = spawn.yaw; S.bodyYaw = spawn.yaw; S.pitch = 0;
       S.vx = 0; S.vz = 0; S.speed = 0; S.aiming = false; S.aimT = 0; S.camFrac = 1;
+      model.skinned?.sidearm?.reset();
     },
   };
 }
