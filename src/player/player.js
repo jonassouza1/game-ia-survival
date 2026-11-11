@@ -635,6 +635,8 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
   const rayDir = new THREE.Vector3(), camPos = new THREE.Vector3(), tmp = new THREE.Vector3();
   const muzzlePoint = new THREE.Vector3();
   const shots = [];
+  // Inimigos: o gerenciador recebe {origin, dir, maxDistance} e devolve o ponto atingido (ou null).
+  let shotHandler = null;
 
   function getMuzzlePoint() {
     const displayPosition = model.root.position.clone();
@@ -737,8 +739,11 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     dir.set(Math.sin(S.yaw) * cp, Math.sin(S.pitch), Math.cos(S.yaw) * cp).normalize();
     raycaster.set(start, dir);
     raycaster.far = 36;
-    const hit = raycaster.intersectObjects(world.occluders, false)[0];
-    const end = hit ? hit.point.clone() : start.clone().addScaledVector(dir, 36);
+    let hit = raycaster.intersectObjects(world.occluders, false)[0];
+    let end = hit ? hit.point.clone() : start.clone().addScaledVector(dir, 36);
+    // Inimigo na linha de tiro (antes da parede)? O projétil termina nele e não marca a parede.
+    const enemyHit = shotHandler?.({ origin: start.clone(), dir: dir.clone(), maxDistance: hit ? hit.distance : 36 });
+    if (enemyHit) { end = enemyHit.point.clone(); hit = null; }
     const geometry = new THREE.BufferGeometry().setFromPoints([displayPoint(start), displayPoint(start)]);
     const material = new THREE.LineBasicMaterial({ color: 0xffe6a1, transparent: true, opacity: 0.95 });
     const tracer = new THREE.Line(geometry, material);
@@ -1047,6 +1052,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
       updateOcclusion(S.fixedView);
     },
     aimScreenPosition,
+    setShotHandler(fn) { shotHandler = fn; },
     setActive: (active) => { S.active = active; },
     setPaused: (paused) => {
       S.paused = paused;

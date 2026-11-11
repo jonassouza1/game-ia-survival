@@ -384,5 +384,44 @@ export function createAudio() {
     }
   }
 
-  return { start, setEnvironment, update, toggleFlashlight, interaction, gunshot, emptyGun, reload };
+  // ── Zumbis: gemidos recortados do mesmo arquivo + impactos de carne ──
+  function zombieGroan({ volume = 0.5, pan = 0, rate = 1, dying = false } = {}) {
+    if (!started || !zombieMoanBuffer) return;
+    const now = ctx.currentTime;
+    const dur = Math.min(zombieMoanBuffer.duration, 1.2 + Math.random() * 1.5);
+    const offset = Math.random() * Math.max(0, zombieMoanBuffer.duration - dur);
+    const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain(), panner = ctx.createStereoPanner();
+    source.buffer = zombieMoanBuffer;
+    source.playbackRate.value = rate;
+    filter.type = 'lowpass';
+    filter.frequency.value = (environment === 'hall' ? 1500 : 1900) * (0.8 + Math.random() * 0.5);
+    const v = Math.min(1, volume) * 0.55;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(v, now + 0.09);
+    gain.gain.setTargetAtTime(0.0001, now + dur * (dying ? 0.5 : 0.7), dying ? 0.25 : 0.14);
+    panner.pan.value = pan;
+    source.connect(filter).connect(gain).connect(panner).connect(master);
+    source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); panner.disconnect(); };
+    source.start(now, offset, dur);
+  }
+  function fleshHit({ head = false } = {}) {
+    if (!started) return;
+    const now = ctx.currentTime;
+    const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+    source.buffer = noiseBuffer(0.2);
+    filter.type = 'bandpass'; filter.frequency.value = head ? 520 : 340; filter.Q.value = 0.8;
+    gain.gain.setValueAtTime(head ? 0.9 : 0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (head ? 0.2 : 0.14));
+    source.connect(filter).connect(gain).connect(master);
+    source.start(now);
+    tone(head ? 130 : 95, 0.14, 'sine', head ? 0.22 : 0.16, 42);
+  }
+  function playerHurt() {
+    if (!started) return;
+    tone(210, 0.28, 'sawtooth', 0.07, 70);
+    fleshHit({ head: false });
+  }
+
+  return { start, setEnvironment, update, toggleFlashlight, interaction, gunshot, emptyGun, reload, zombieGroan, fleshHit, playerHurt };
 }

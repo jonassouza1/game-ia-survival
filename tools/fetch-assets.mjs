@@ -100,6 +100,14 @@ const CHARACTERS = [
     source: 'three.js examples / Mixamo',
     license: 'Mixamo (Adobe)',
   },
+  {
+    // Zumbi feminino: o mesmo modelo é "zumbificado" por shader (ver src/enemies).
+    name: 'Michelle',
+    dir: 'zombies',
+    url: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Michelle.glb',
+    source: 'three.js examples / Mixamo',
+    license: 'Mixamo (Adobe)',
+  },
 ];
 
 const CONCURRENCY = 4;
@@ -219,7 +227,7 @@ async function fetchModel(id) {
 
 // ───────────────────────────────── Personagem ─────────────────────────────────
 async function fetchCharacter(entry) {
-  const file = path.join(PUBLIC, 'models', 'character', `${entry.name}.glb`);
+  const file = path.join(PUBLIC, 'models', entry.dir ?? 'character', `${entry.name}.glb`);
   if (!FORCE && await exists(file)) {
     console.log(`  · ${entry.name} (já existe)`);
     return;
@@ -239,7 +247,7 @@ async function writeManifest() {
     models: MODELS.map((id) => ({ id, path: `/models/polyhaven/${id}/${id}.gltf` })),
     characters: CHARACTERS.map((entry) => ({
       id: entry.name,
-      path: `/models/character/${entry.name}.glb`,
+      path: `/models/${entry.dir ?? 'character'}/${entry.name}.glb`,
       source: entry.source,
       license: entry.license,
     })),

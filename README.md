@@ -125,3 +125,23 @@ tools/
   modelos de prédio; o foco do realismo ficou no saguão e nos props.
 - O céu noturno é um HDRI 1k escurecido; em telas muito grandes pode faltar
   resolução nas estrelas.
+
+## Zumbis (inimigos)
+
+Código em `src/enemies/`:
+
+| Arquivo | O que faz |
+|---|---|
+| `roster.js` | **Edite aqui**: modelos, aparência de cada zumbi e onde eles ficam (RPD e rua). |
+| `zombieManager.js` | IA (acordar, levantar, perseguir, escada, A* quando trava, ataque), tiro/dano por zona, sangue, dano no jogador. |
+| `zombieRig.js` | Carregamento dos GLBs, animação procedural (agachado comendo, levantar, cambalear, ataque, reação a tiro, morte) e hitboxes por osso. |
+| `zombieAppearance.js` | Shader de zumbi: palidez, sujeira, roupas recoloridas e sangue colado no corpo. |
+
+**Dano por zona** (vida 100): cabeça 100 (1 tiro) · pescoço 50 · peito 34 (3 tiros) · abdômen 30 · braço 12 · perna 20.
+**Mordida**: 20 de dano (5 mordidas = morte). Tudo ajustável em `TUNING` (`zombieManager.js`) e `ZONES` (`zombieRig.js`).
+
+### Trocando por zumbis mais realistas
+Qualquer GLB com esqueleto Mixamo (`mixamorig:Hips`, …) funciona. No [mixamo.com](https://www.mixamo.com)
+(conta Adobe gratuita) escolha um personagem zumbi (ex.: *Zombie*, *Warzombie*), baixe como **glTF/GLB com skin**
+(pose T), salve em `public/models/zombies/` e aponte em `MODELS` no `roster.js`. Os clipes de caminhada
+vêm do `Soldier.glb` (retarget automático) e o resto é gerado por código — não precisa baixar animações.

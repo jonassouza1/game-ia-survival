@@ -7,6 +7,7 @@ import { createInteraction } from './systems/interaction.js';
 import { createAudio } from './systems/audio.js';
 import { createInventory } from './systems/inventory.js';
 import { CollisionWorld } from './systems/collision.js';
+import { createEnemies } from './enemies/zombieManager.js';
 import { initPBR } from './render/pbr.js';
 import { createEnvironment } from './render/environment.js';
 import { createPostFX } from './render/postfx.js';
@@ -133,6 +134,55 @@ player = createPlayer({
   scene, world, camera, dom: renderer.domElement, audio, inventory, quality,
 });
 
+// ── Vida do jogador ──
+const health = { hp: 100, max: 100, dead: false };
+const healthSegments = [...document.querySelectorAll('#hud .health span')];
+const hudValue = document.querySelector('#hud .hud-value');
+const damageFlash = document.querySelector('#damage-flash');
+const deathScreen = document.querySelector('#death');
+function renderHealth() {
+  const lit = Math.ceil((health.hp / health.max) * healthSegments.length);
+  const tier = health.hp > 60 ? 'fine' : health.hp > 30 ? 'caution' : 'danger';
+  healthSegments.forEach((segment, index) => { segment.style.opacity = index < lit ? '1' : '0.14'; });
+  hudValue.textContent = health.dead ? 'DEAD' : tier.toUpperCase();
+  const color = { fine: '#7e9b65', caution: '#c7a73c', danger: '#b8352b' }[tier];
+  healthSegments.forEach((segment) => { segment.style.background = color; segment.style.boxShadow = `0 0 5px ${color}88`; });
+  hudValue.style.color = color;
+}
+function damagePlayer(amount) {
+  if (health.dead) return;
+  health.hp = Math.max(0, health.hp - amount);
+  audio.playerHurt();
+  damageFlash.classList.remove('hit'); void damageFlash.offsetWidth; damageFlash.classList.add('hit');
+  renderHealth();
+  if (health.hp <= 0) {
+    health.dead = true;
+    renderHealth();
+    hasPointerLock = false;
+    player.setActive(false);
+    document.exitPointerLock?.();
+    window.setTimeout(() => deathScreen.classList.add('show'), 900);
+  }
+}
+document.querySelector('#retry')?.addEventListener('click', () => window.location.reload());
+renderHealth();
+
+// ── Inimigos (zumbis) ──
+const enemies = createEnemies({
+  scene,
+  locations: {
+    hall: { group: hallGroup, collisions: hallWorld.collisions },
+    street: { group: streetGroup, collisions: streetWorld.collisions },
+  },
+  getPlayer: () => player,
+  getActiveCollisions: () => activeCollisions,
+  audio,
+  quality,
+  onPlayerDamage: damagePlayer,
+});
+enemies.init().catch((error) => console.error('Falha ao carregar os zumbis:', error));
+player.setShotHandler((shot) => enemies.onPlayerShot({ ...shot, location: activeLocation }));
+
 interaction = createInteraction({
   promptEl: document.querySelector('#prompt'),
   toastEl: document.querySelector('#toast'),
@@ -149,7 +199,7 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  if (!started) return;
+  if (!started || health.dead) return;
   if (e.code === 'KeyI' || e.code === 'Tab') { e.preventDefault(); inventory.open(); return; }
   if (e.code === 'KeyR' && !e.repeat) {
     inventory.reload();
@@ -194,7 +244,7 @@ window.addEventListener('resize', () => {
 // Gancho de depuração (console: __rpd.player.state)
 window.__rpd = {
   THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality,
-  activeCollisions, hallWorld, streetWorld,
+  activeCollisions, hallWorld, streetWorld, enemies, health, damagePlayer,
   step: (dt = 1 / 60) => frame(dt),
 };
 
@@ -204,6 +254,7 @@ function frame(dt) {
   t += dt;
   player.update(dt);
   world.update(t, dt, camera.position);
+  if (player.state.active && !player.state.paused) enemies.update(dt, activeLocation);
   interaction.update(dt, player.state);
   reticle.classList.toggle('on', player.state.aimT > 0.5);
   const aimPoint = player.aimScreenPosition();
