@@ -94,7 +94,16 @@ const NOISE_GLSL = /* glsl */`
 
 // opts: decay 0..1 (palidez), blood 0..1, cloth (THREE.Color) tinge das roupas,
 //       skin (THREE.Color) tom da pele, seed
-export function makeZombieMaterial(source, opts = {}) {
+export function makeZombieMaterial(original, opts = {}) {
+  // FBX costuma trazer MeshPhongMaterial: converte para o material PBR usado no resto do jogo.
+  let source = original;
+  if (!original.isMeshStandardMaterial) {
+    const params = { name: original.name, color: original.color?.clone() ?? new THREE.Color(0xffffff), roughness: 0.85, metalness: 0,
+      transparent: original.transparent, opacity: original.opacity, alphaTest: original.alphaTest, side: original.side };
+    if (original.map) params.map = original.map;
+    if (original.normalMap) params.normalMap = original.normalMap;
+    source = new THREE.MeshStandardMaterial(params);
+  }
   const material = source.clone();
   const u = {
     uDecay: { value: opts.decay ?? 0.6 },

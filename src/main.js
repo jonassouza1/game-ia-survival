@@ -182,6 +182,7 @@ const enemies = createEnemies({
 });
 enemies.init().catch((error) => console.error('Falha ao carregar os zumbis:', error));
 player.setShotHandler((shot) => enemies.onPlayerShot({ ...shot, location: activeLocation }));
+player.setShotProbe((shot) => enemies.probe({ ...shot, location: activeLocation }));
 
 interaction = createInteraction({
   promptEl: document.querySelector('#prompt'),

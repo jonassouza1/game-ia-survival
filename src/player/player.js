@@ -653,14 +653,45 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     return muzzlePoint;
   }
 
-  function aimScreenPosition() {
+  // ── Mira convergente ────────────────────────────────────────────────────────────────────
+  // A câmera fica sobre o ombro (≈0,7 m à direita e 2,4 m atrás), mas o cano da arma está noutro
+  // ponto: antes a bala saía do cano PARALELA ao eixo da câmera, ficando sempre ~0,5 m deslocada do
+  // que o retículo mostrava — num zumbi a 5 m isso é a largura do tronco inteiro. Agora o alvo é o
+  // que o centro da tela enxerga (parede ou zumbi) e a bala parte do cano em direção a esse ponto.
+  const aimRay = new THREE.Raycaster();
+  const baseDir = new THREE.Vector3(), aimPoint = new THREE.Vector3(), camOrigin = new THREE.Vector3();
+  let shotProbe = null;     // ({origin, dir, maxDistance}) → {t} | null — inimigo no caminho, sem dano
+  function computeShotDir(origin, out) {
     const cp = Math.cos(S.pitch);
-    dir.set(Math.sin(S.yaw) * cp, Math.sin(S.pitch), Math.cos(S.yaw) * cp);
+    baseDir.set(Math.sin(S.yaw) * cp, Math.sin(S.pitch), Math.cos(S.yaw) * cp).normalize();
+    out.copy(baseDir);
+    if (S.fixedView) return out;      // câmera fixa: mantém o comportamento antigo
+    camOrigin.copy(camera.position);
+    aimRay.set(camOrigin, baseDir);
+    aimRay.far = 60;
+    const wall = aimRay.intersectObjects(world.occluders, false)[0];
+    let dist = wall ? wall.distance : 60;
+    const enemy = shotProbe?.({ origin: camOrigin.clone(), dir: baseDir.clone(), maxDistance: dist });
+    if (enemy) dist = Math.min(dist, enemy.t);
+    aimPoint.copy(camOrigin).addScaledVector(baseDir, dist);
+    out.copy(aimPoint).sub(origin);
+    const len = out.length();
+    // alvo colado na arma ou muito de lado: não converge (evita tiros tortos)
+    if (len < 1.5 || out.dot(baseDir) < len * 0.5) return out.copy(baseDir);
+    return out.divideScalar(len);
+  }
+
+  function aimScreenPosition() {
     const origin = getMuzzlePoint().clone();
+    computeShotDir(origin, dir);
     raycaster.set(origin, dir);
     raycaster.far = 36;
     const hit = raycaster.intersectObjects(world.occluders, false)[0];
-    const target = hit ? hit.point : origin.addScaledVector(dir, 24);
+    let reach = hit ? hit.distance : 24;
+    // o retículo para sobre o zumbi quando o tiro o acertaria
+    const enemy = S.aimT > 0.5 ? shotProbe?.({ origin: origin.clone(), dir: dir.clone(), maxDistance: reach }) : null;
+    if (enemy) reach = Math.min(reach, enemy.t);
+    const target = origin.clone().addScaledVector(dir, reach);
     const projected = S.fixedView?.project?.(target);
     if (projected) return { x: projected.x, y: projected.y };
     target.project(camera);
@@ -735,8 +766,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
 
   function fireProjectile() {
     const start = getMuzzlePoint().clone();
-    const cp = Math.cos(S.pitch);
-    dir.set(Math.sin(S.yaw) * cp, Math.sin(S.pitch), Math.cos(S.yaw) * cp).normalize();
+    computeShotDir(start, dir);
     raycaster.set(start, dir);
     raycaster.far = 36;
     let hit = raycaster.intersectObjects(world.occluders, false)[0];
@@ -1053,6 +1083,7 @@ export function createPlayer({ scene, world, camera, displayCamera, dom, audio, 
     },
     aimScreenPosition,
     setShotHandler(fn) { shotHandler = fn; },
+    setShotProbe(fn) { shotProbe = fn; },
     setActive: (active) => { S.active = active; },
     setPaused: (paused) => {
       S.paused = paused;

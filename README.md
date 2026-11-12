@@ -133,15 +133,21 @@ Código em `src/enemies/`:
 | Arquivo | O que faz |
 |---|---|
 | `roster.js` | **Edite aqui**: modelos, aparência de cada zumbi e onde eles ficam (RPD e rua). |
-| `zombieManager.js` | IA (acordar, levantar, perseguir, escada, A* quando trava, ataque), tiro/dano por zona, sangue, dano no jogador. |
-| `zombieRig.js` | Carregamento dos GLBs, animação procedural (agachado comendo, levantar, cambalear, ataque, reação a tiro, morte) e hitboxes por osso. |
+| `zombieManager.js` | IA (acordar, levantar, gritar, perseguir, escada, A* quando trava, ataque), tiro/dano por zona, sangue, dano no jogador. |
+| `zombieRig.js` | Carregamento de GLB/FBX, retarget das animações, mistura de clipes, reação a tiro e hitboxes por osso. |
+| `zombieClips.js` | Lista das animações Mixamo de zumbi (`public/animations/zombie/*.fbx`). |
 | `zombieAppearance.js` | Shader de zumbi: palidez, sujeira, roupas recoloridas e sangue colado no corpo. |
 
+**Animações usadas** (Mixamo): `idle` (policiais parados) · `scream` (policiais notam você) · `biting2` (comendo a vítima) ·
+`biting` (trecho final: levantar) · `walk` (perseguição) · `attack` (mordida; o dano cai no contato) ·
+`death` (headshot, cai de costas) · `dying` (tiros no corpo, ajoelha e desaba). Disponíveis e ainda sem uso:
+`run`, `crawl`, `runningCrawl`, `neckBite`.
+
 **Dano por zona** (vida 100): cabeça 100 (1 tiro) · pescoço 50 · peito 34 (3 tiros) · abdômen 30 · braço 12 · perna 20.
-**Mordida**: 20 de dano (5 mordidas = morte). Tudo ajustável em `TUNING` (`zombieManager.js`) e `ZONES` (`zombieRig.js`).
+Se a bala passa pelo braço e continua para o tronco, conta como peito/abdômen.
+**Mordida**: 20 de dano (5 mordidas = morte). Velocidade de perseguição, dano e tempos: `TUNING` em `zombieManager.js`.
 
 ### Trocando por zumbis mais realistas
-Qualquer GLB com esqueleto Mixamo (`mixamorig:Hips`, …) funciona. No [mixamo.com](https://www.mixamo.com)
-(conta Adobe gratuita) escolha um personagem zumbi (ex.: *Zombie*, *Warzombie*), baixe como **glTF/GLB com skin**
-(pose T), salve em `public/models/zombies/` e aponte em `MODELS` no `roster.js`. Os clipes de caminhada
-vêm do `Soldier.glb` (retarget automático) e o resto é gerado por código — não precisa baixar animações.
+Veja o cabeçalho de `roster.js`: baixe um personagem zumbi no [mixamo.com](https://www.mixamo.com) como **FBX Binary, T-pose**,
+coloque em `public/models/zombies/` (com as texturas na mesma pasta) e aponte em `MODELS`. Não precisa baixar animações:
+as de `public/animations/zombie/` são retargetadas automaticamente para qualquer esqueleto Mixamo.

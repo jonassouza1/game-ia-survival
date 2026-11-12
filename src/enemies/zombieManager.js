@@ -9,9 +9,10 @@ const angleDiff = (a, b) => ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % 
 const TUNING = {
   hp: 100,
   radius: 0.38,
-  speed: [1.12, 1.5],          // m/s (o jogador anda a 2.75; mirando, 1.18)
+  speed: [0.62, 0.86],         // m/s — o clipe de caminhada é um arrastar lento (o jogador anda a 2.75; mirando, 1.18)
   attackRange: 1.15,
   attackReach: 1.5,
+  attackStrike: 0.42,          // instante do contato dentro do clipe de ataque (1,05 s de 2,5 s)
   attackDamage: 20,            // 5 mordidas = morte (5 segmentos na vida)
   turnRate: 3.6,
   groanEvery: [3.2, 7.5],
@@ -201,9 +202,10 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   }
 
   // ── Criação ────────────────────────────────────────────────────────────
-  async function spawnZombie(loc, group, member, x, z, yaw, y) {
+  async function spawnZombie(loc, group, member, x, z, yaw, y, place = null) {
     const model = await loadZombieModel(MODELS[member.model]);
     const actor = createZombieActor(model, member.look, { castShadow: quality?.shadows !== 'none' });
+    if (place) ({ x, z, yaw } = place(actor));
     const rand = Math.random;
     const z0 = {
       id: zombies.length, loc, group, actor, x, z, y, yaw, modelName: member.model,
@@ -221,6 +223,47 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
     return z0;
   }
 
+
+  // Vítima caída no centro + zumbis de bruços ao redor, com a cabeça sobre o corpo dela.
+  async function setupFeast(loc, group, g, floorY) {
+    const { x: cx, z: cz } = g.center;
+    const model = await loadZombieModel(MODELS[g.victim.model]);
+    const victim = createZombieActor(model, g.victim.look, { castShadow: true });
+    victim.startDeath({ instant: true });
+    const yaw = g.victim.yaw, c = Math.cos(yaw), s = Math.sin(yaw);
+    const rot = (x, z) => [x * c + z * s, -x * s + z * c];                      // local → mundo (yaw)
+    const lp = victim.lyingPose;
+    const [hx, hz] = rot(lp.hips[0], lp.hips[1]);
+    victim.root.position.set(cx - hx, floorY, cz - hz);                          // quadril da vítima no centro
+    victim.root.rotation.y = yaw;
+    locations[loc].group.add(victim.root);
+    victim.root.updateMatrixWorld(true);
+    group.victim = victim;
+    // eixo da vítima (quadril → cabeça) no mundo
+    const [ax0, az0] = rot(lp.head[0] - lp.hips[0], lp.head[1] - lp.hips[1]);
+    const al = Math.hypot(ax0, az0), ax = ax0 / al, az = az0 / al, px = az, pz = -ax;
+    bloodPool(loc, cx, floorY, cz, 2.7, 1, 1);
+    bloodPool(loc, cx + ax * 0.5, floorY, cz + az * 0.5, 1.7, 1, 1);
+
+    // posições (s ao longo do corpo: + cabeça; l lateral) de onde cada zumbi come
+    const slots = [{ s: 0.5, l: 0.42 }, { s: 1.0, l: -0.45 }, { s: -0.25, l: -0.45 }, { s: -0.85, l: 0.42 }, { s: -1.6, l: 0 }];
+    const jobs = g.members.map(async (m, i) => {
+      const slot = slots[i % slots.length];
+      const place = (actor) => {
+        const fp = actor.feedPose;
+        const phi = Math.atan2(fp.head[0] - fp.hips[0], fp.head[1] - fp.hips[1]);   // para onde o corpo aponta (local)
+        const hxw = cx + ax * slot.s + px * slot.l, hzw = cz + az * slot.s + pz * slot.l;
+        // direção "do corpo para a cabeça": rumo ao centro da vítima
+        const tx = slot.l === 0 ? ax : -Math.sign(slot.l) * px, tz = slot.l === 0 ? az : -Math.sign(slot.l) * pz;
+        const zYaw = Math.atan2(tx, tz) - phi + (Math.random() - 0.5) * 0.25;
+        const zc = Math.cos(zYaw), zs = Math.sin(zYaw);
+        return { yaw: zYaw, x: hxw - (fp.head[0] * zc + fp.head[1] * zs), z: hzw - (-fp.head[0] * zs + fp.head[1] * zc) };
+      };
+      return spawnZombie(loc, group, m, 0, 0, 0, floorY, place);
+    });
+    await Promise.all(jobs);
+  }
+
   async function init() {
     const tasks = [];
     for (const [loc, cfg] of Object.entries(LOCATIONS)) {
@@ -229,33 +272,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
         groups.push(group);
         const floorY = cfg.floorY ?? 0;
         if (g.kind === 'feed') {
-          const { x: cx, z: cz } = g.center;
-          // Vítima caída no centro (modelo rígido, sem IA)
-          tasks.push((async () => {
-            const model = await loadZombieModel(MODELS[g.victim.model]);
-            const actor = createZombieActor(model, g.victim.look, { castShadow: true });
-            actor.root.position.set(cx, floorY, cz);
-            actor.root.rotation.y = g.victim.yaw;
-            locations[loc].group.add(actor.root);
-            actor.startDeath({ instant: true, headshot: false, fromFront: false, side: 1 });
-            actor.update(0.016);
-            for (let i = 0; i < 3; i++) actor.update(0.016);
-            group.victim = actor;
-            bloodPool(loc, cx, floorY, cz, 2.6, 1, 1);
-            bloodPool(loc, cx + Math.sin(g.victim.yaw) * 0.9, floorY, cz + Math.cos(g.victim.yaw) * 0.9, 1.5, 1, 1);
-          })());
-          // Zumbis em elipse ao redor da vítima, olhando para ela
-          const n = g.members.length;
-          const major = 1.45, minor = 0.82;
-          const axis = g.victim.yaw;
-          g.members.forEach((m, i) => {
-            const a = (i / n) * Math.PI * 2 + 0.5;
-            const lx = Math.cos(a) * minor, lz = Math.sin(a) * major;   // eixo maior ao longo do corpo
-            const x = cx + lx * Math.cos(axis) + lz * Math.sin(axis);
-            const z = cz - lx * Math.sin(axis) + lz * Math.cos(axis);
-            const yaw = Math.atan2(cx - x, cz - z) + (Math.random() - 0.5) * 0.4;
-            tasks.push(spawnZombie(loc, group, m, x, z, yaw, floorY));
-          });
+          tasks.push(setupFeast(loc, group, g, floorY));
         } else {
           g.members.forEach((m) => tasks.push(spawnZombie(loc, group, m, m.x, m.z, m.yaw, floorY)));
         }
@@ -282,14 +299,53 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   function beginRise(z) {
     z.waking = false;
     if (z.state === 'feed') {
-      const duration = z.quickRise ? 1.1 : 1.7 + Math.random() * 0.7;
-      z.state = 'rising'; z.riseLeft = duration;
-      z.actor.setMode('rise', { duration });
+      // desloca a raiz para o ponto em que o clipe "levantar" começa (ver riseShift)
+      const [sx, sz] = z.actor.feedPose.riseShift, c = Math.cos(z.yaw), s = Math.sin(z.yaw);
+      z.x += sx * c + sz * s; z.z += -sx * s + sz * c;
+      z.state = 'rising';
+      z.actor.setMode('rise', { timeScale: z.quickRise ? 1.5 : 1.1 + Math.random() * 0.2 });
       audio?.zombieGroan?.({ volume: 0.7, rate: 0.9 + Math.random() * 0.2 });
     } else {
-      z.state = 'chase';
-      z.actor.setMode('walk');
-      audio?.zombieGroan?.({ volume: 0.6, rate: 0.85 + Math.random() * 0.2 });
+      // em pé: primeiro um grito ao notar o jogador, depois persegue
+      z.state = 'screaming';
+      z.actor.setMode('scream', { timeScale: 1.45 + Math.random() * 0.2 });
+      audio?.zombieGroan?.({ volume: 0.9, rate: 0.8 + Math.random() * 0.1 });
+    }
+  }
+
+  // Largura útil da escada para o CORPO do zumbi (meia-largura): degraus têm 3 m (±1,5) e o corrimão fica
+  // em ±1,38; com raio 0,38 o centro precisa ficar a ≤ 1,0 m do eixo. (A rampa de colisão aceita ±1,92,
+  // folga pensada para o jogador, que deixava o zumbi andar no ar, do lado de fora da escada.)
+  const STAIR_BODY_HALF = 1.0;
+
+  function stairParam(r, zPos) {
+    const span = r.zTo - r.zFrom;
+    return clamp((zPos - r.zFrom) / (Math.abs(span) < 1e-6 ? 1 : span), 0, 1);
+  }
+  function followStairAxis(r, z, goingDown, far) {
+    const up = r.yTo > r.yFrom;                       // t crescente sobe?
+    const tEnd = goingDown ? (up ? 0 : 1) : (up ? 1 : 0);
+    const t = stairParam(r, z.z);
+    if (Math.abs(tEnd - t) < 0.14) return far;
+    const t2 = clamp(t + Math.sign(tEnd - t) * 0.14, 0, 1);
+    const cx = r.centerXAt ? r.centerXAt(t2) : (r.centerXFrom + (r.centerXTo - r.centerXFrom) * t2);
+    return { x: cx, z: r.zFrom + (r.zTo - r.zFrom) * t2 };
+  }
+  // Mantém o zumbi sobre os degraus: qualquer empurrão (colisão, separação, knockback, desvio) é
+  // limitado ao corredor útil da escada.
+  function keepOnStairs(z, col) {
+    for (const r of col.ramps) {
+      if (Math.abs(r.yTo - r.yFrom) < 2) continue;
+      const lo = Math.min(r.yFrom, r.yTo), zMin = Math.min(r.zFrom, r.zTo), zMax = Math.max(r.zFrom, r.zTo);
+      if (z.y <= lo + 0.05 || z.z <= zMin || z.z >= zMax) continue;
+      const cx = r.centerXAt ? r.centerXAt(stairParam(r, z.z)) : (r.centerXFrom + (r.centerXTo - r.centerXFrom) * stairParam(r, z.z));
+      const off = z.x - cx;
+      if (Math.abs(off) > r.halfWidth + 0.3) continue;          // não é desta escada
+      if (Math.abs(off) > STAIR_BODY_HALF) {
+        z.x = cx + Math.sign(off) * STAIR_BODY_HALF;
+        z.y = col.floorY(z.x, z.z, z.y) ?? z.y;
+      }
+      return;
     }
   }
 
@@ -309,9 +365,13 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
       const highEnd = endOf(r, r.yTo > r.yFrom), lowEnd = endOf(r, r.yTo < r.yFrom);
       const near = goingDown ? highEnd : lowEnd, far = goingDown ? lowEnd : highEnd;
       const dNear = Math.hypot(near.x - z.x, near.z - z.z);
-      const onRamp = z.y > lo + 0.25 && z.y < hi - 0.25;
-      // Já na escada, ou chegou na entrada dela: segue direto para a outra ponta.
-      if (onRamp || dNear < 1.1) return far;
+      // "Na escada" = na altura certa E dentro do corredor desta escada (são duas: esquerda e direita).
+      const tHere = stairParam(r, z.z), cxHere = r.centerXAt ? r.centerXAt(tHere) : (r.centerXFrom + (r.centerXTo - r.centerXFrom) * tHere);
+      const onRamp = z.y > lo + 0.25 && z.y < hi - 0.25 && Math.abs(z.x - cxHere) < r.halfWidth + 0.3
+        && z.z > Math.min(r.zFrom, r.zTo) - 0.3 && z.z < Math.max(r.zFrom, r.zTo) + 0.3;
+      // Já na escada, ou chegou na entrada dela: segue o EIXO da escada (que é curvo) com um pouco de
+      // antecedência, em vez de cortar reto até a outra ponta — assim não sai pela lateral/corrimão.
+      if (onRamp || dNear < 1.1) return followStairAxis(r, z, goingDown, far);
       if (dNear < bestD) { best = near; bestD = dNear; }
     }
     return best;
@@ -359,7 +419,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
     z.deathAge = 0;
     audio?.zombieGroan?.({ volume: 0.55, rate: 0.7 + Math.random() * 0.15, dying: true });
     const deathPos = z.actor.root.position;
-    z.poolAt = 0.5;
+    z.poolAt = 1.6;
   }
 
   function applyHit(z, hit, dir) {
@@ -379,9 +439,8 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
     return false;
   }
 
-  function onPlayerShot({ origin, dir, maxDistance, location }) {
-    // Ruído do disparo acorda quem está por perto
-    noise(origin.x, origin.z, origin.y, location, 26);
+  // Primeiro zumbi vivo atingido pelo raio (sem aplicar dano) → { hit, zombie } ou null.
+  function findHit({ origin, dir, maxDistance, location }) {
     if (!ready) return null;
     let best = null, bestZ = null;
     for (const z of zombies) {
@@ -395,7 +454,21 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
       const hit = raycastActor(z.actor, origin, dir, maxDistance);
       if (hit && (!best || hit.t < best.t)) { best = hit; bestZ = z; }
     }
-    if (!best) return null;
+    return best ? { hit: best, zombie: bestZ } : null;
+  }
+
+  // Consulta sem efeitos: onde o raio bateria num zumbi? (a mira usa isso para o retículo e para convergir o tiro)
+  function probe(shot) {
+    const f = findHit(shot);
+    return f ? { t: f.hit.t, point: f.hit.point, zone: f.hit.zone } : null;
+  }
+
+  function onPlayerShot({ origin, dir, maxDistance, location }) {
+    // Ruído do disparo acorda quem está por perto
+    noise(origin.x, origin.z, origin.y, location, 26);
+    const found = findHit({ origin, dir, maxDistance, location });
+    if (!found) return null;
+    const { hit: best, zombie: bestZ } = found;
     const killed = applyHit(bestZ, best, dir);
     return { point: best.point, zone: best.zone, killed, zombie: bestZ };
   }
@@ -450,7 +523,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
           const hp = a.bones.Hips.getWorldPosition(new THREE.Vector3());
           z.pool = bloodPool(z.loc, hp.x, z.y, hp.z, 1.5 + Math.random() * 0.5, 7);
         }
-        if (!z.frozen) { a.update(dt); if (z.deathAge > 3.2) z.frozen = true; }
+        if (!z.frozen) { a.update(dt); if (a.settled && z.deathAge > 1) z.frozen = true; }
         continue;
       }
 
@@ -462,11 +535,10 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
       let speed = 0;
       z.stagger = Math.max(0, z.stagger - dt);
 
-      if (z.state === 'rising') {
-        z.riseLeft -= dt;
-        if (z.riseLeft <= 0) { z.state = 'chase'; a.setMode('walk'); }
-        // encara o jogador enquanto levanta
-        z.yaw += clamp(angleDiff(z.yaw, Math.atan2(dx, dz)), -1.4 * dt, 1.4 * dt);
+      if (z.state === 'rising' || z.state === 'screaming') {
+        // encara o jogador enquanto levanta / grita
+        z.yaw += clamp(angleDiff(z.yaw, Math.atan2(dx, dz)), -1.6 * dt, 1.6 * dt);
+        if (z.state === 'rising' ? a.riseDone : a.screamDone) { z.state = 'chase'; a.setMode('walk'); }
       } else if (z.state === 'chase' || z.state === 'attack') {
         const desired = Math.atan2(dx, dz);
         let turn = TUNING.turnRate * (z.stagger > 0 ? 0.3 : 1);
@@ -507,11 +579,11 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
             }
           }
         } else { // attack
-          if (a.attackProgress >= 0.5 && !z.attackHitDone) {
+          if (a.attackProgress >= TUNING.attackStrike && !z.attackHitDone) {
             z.attackHitDone = true;
             if (dist < TUNING.attackReach && Math.abs(S.y - z.y) < 1.6) onPlayerDamage?.(TUNING.attackDamage, z);
           }
-          if (a.attackProgress >= 1) {
+          if (a.attackProgress >= 0.97) {
             z.state = 'chase'; z.attackCooldown = 0.35 + Math.random() * 0.4; a.setMode('walk');
           }
         }
@@ -535,6 +607,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
         S.x = r.x; S.z = r.z;
       }
 
+      keepOnStairs(z, col);
       a.setLocomotion(speed);
       a.root.position.set(z.x, z.y, z.z);
       a.root.rotation.y = z.yaw;
@@ -543,7 +616,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   }
 
   return {
-    init, update, onPlayerShot, noise, zombies, groups,
+    init, update, onPlayerShot, probe, noise, zombies, groups,
     get ready() { return ready; },
     stats() { return zombies.map((z) => ({ id: z.id, loc: z.loc, state: z.state, hp: z.hp, x: +z.x.toFixed(2), z: +z.z.toFixed(2) })); },
   };

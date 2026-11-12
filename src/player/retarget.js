@@ -85,11 +85,12 @@ function median(values) {
  * @param {THREE.Object3D} sourceRoot  cena do GLB de origem (ex.: Soldier.glb)
  * @param {THREE.Object3D} targetRoot  cena do GLB do personagem (ex.: swat.glb)
  * @param {THREE.AnimationClip} clip   clipe da origem
+ * @param {boolean} [opts.inPlace] remove o avanço linear do quadril (clipes exportados com "root motion")
  * @returns {{ clip: THREE.AnimationClip, groundSpeed: number, strikePhase: number, info: object }}
  *   groundSpeed: velocidade (unidades do rig do alvo / s) em que os pés não escorregam
  *   strikePhase: fase [0..1) do ciclo em que o pé esquerdo está mais à frente
  */
-export function retargetMixamoClip(sourceRoot, targetRoot, clip, { fps = 30, groundFix = true } = {}) {
+export function retargetMixamoClip(sourceRoot, targetRoot, clip, { fps = 30, groundFix = true, inPlace = false } = {}) {
   toBindPose(sourceRoot);
   toBindPose(targetRoot);
   const sBones = bonesByName(sourceRoot);
@@ -144,6 +145,19 @@ export function retargetMixamoClip(sourceRoot, targetRoot, clip, { fps = 30, gro
 
   const frames = Math.max(1, Math.round(clip.duration * fps));
   const times = new Float32Array(frames + 1);
+
+  // inPlace: deslocamento horizontal total do quadril ao longo do clipe (será removido de forma linear).
+  const travel = new THREE.Vector3();
+  if (inPlace && hipsSampler) {
+    const at = (t) => {
+      sBones[HIPS].position.fromArray(hipsSampler.evaluate(t));
+      sourceRoot.updateMatrixWorld(true);
+      return new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().multiplyMatrices(new THREE.Matrix4().copy(sourceRoot.matrixWorld).invert(), sBones[HIPS].matrixWorld));
+    };
+    travel.copy(at(clip.duration)).sub(at(0));
+    travel.y = 0;
+    sBones[HIPS].position.copy(sLocal[HIPS].p);
+  }
   const quatValues = {};
   for (const name of mapped) quatValues[name] = new Float32Array((frames + 1) * 4);
   const hipsWorld = [];
@@ -197,7 +211,9 @@ export function retargetMixamoClip(sourceRoot, targetRoot, clip, { fps = 30, gro
     // Quadril: deslocamento da origem (cm→m via escala do rig) * proporção, girado para o alvo.
     matrix.multiplyMatrices(sInv, sBones[HIPS].matrixWorld);
     matrix.decompose(sP, sQ, scale);
-    const offset = sP.sub(sRest[HIPS].p).applyQuaternion(qC).multiplyScalar(hipsScale);
+    sP.sub(sRest[HIPS].p);
+    if (inPlace) sP.addScaledVector(travel, -(i / frames));        // tira o avanço linear, mantém o balanço
+    const offset = sP.applyQuaternion(qC).multiplyScalar(hipsScale);
     hipsWorld.push(tRest[HIPS].p.clone().add(offset));
 
     // Aplica a pose calculada no alvo só para medir posição dos pés (FK exata).
@@ -269,6 +285,6 @@ export function retargetMixamoClip(sourceRoot, targetRoot, clip, { fps = 30, gro
     clip: new THREE.AnimationClip(clip.name, clip.duration, tracks),
     groundSpeed,
     strikePhase,
-    info: { frames, hipsScale, groundShift, yawCorrection: THREE.MathUtils.radToDeg(lateralYaw(tRest) - lateralYaw(sRest)) },
+    info: { frames, hipsScale, rootSpeed: travel.clone().applyQuaternion(qC).length() * hipsScale / clip.duration, groundShift, yawCorrection: THREE.MathUtils.radToDeg(lateralYaw(tRest) - lateralYaw(sRest)) },
   };
 }
