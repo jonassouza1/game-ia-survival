@@ -17,14 +17,57 @@ const TAU = Math.PI * 2;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const loader = new GLTFLoader();
-const fbxLoader = new FBXLoader();
 const gltfCache = new Map();
+
+// FBX do Mixamo referencia as texturas (.png) por nome de arquivo, na mesma pasta do .fbx.
+// Esperamos TODAS as texturas terminarem de carregar; as que não existirem são descartadas e o
+// material cai numa cor lisa (em vez de ficar PRETO) — e avisamos no console quais faltam.
+const MISSING_TEXTURE_TINT = 0x8a9478;
+// Os FBX trazem texturas 2048×2048 embutidas; reduzimos para economizar memória de vídeo (placas integradas).
+const MAX_TEXTURE_SIZE = 1024;
+function shrinkTexture(tex) {
+  const img = tex?.image;
+  if (!img || !img.width || Math.max(img.width, img.height) <= MAX_TEXTURE_SIZE || typeof document === 'undefined') return;
+  const k = MAX_TEXTURE_SIZE / Math.max(img.width, img.height);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  tex.image = c; tex.needsUpdate = true;
+}
+function loadFBX(url) {
+  return new Promise((resolve, reject) => {
+    const failed = [];
+    const manager = new THREE.LoadingManager();
+    manager.onError = (u) => failed.push(u);
+    let object = null;
+    manager.onLoad = () => {
+      if (!object) return;
+      const slots = ['map', 'normalMap', 'specularMap', 'bumpMap', 'alphaMap', 'emissiveMap'];
+      const lost = new Set();
+      object.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of [].concat(o.material)) {
+          for (const slot of slots) {
+            if (m[slot] && !m[slot].image) {
+              if (slot === 'map') m.color?.set(MISSING_TEXTURE_TINT);
+              m[slot] = null; m.needsUpdate = true;
+            }
+          }
+          shrinkTexture(m.map); shrinkTexture(m.normalMap);
+        }
+      });
+      failed.forEach((u) => lost.add(u.startsWith('blob:') ? '(textura embutida ilegível)' : decodeURIComponent(u.split('/').pop())));
+      if (lost.size) console.warn(`[zumbis] ${url}: textura(s) não carregaram: ${[...lost].join(', ')}`);
+      resolve({ scene: object, animations: object.animations });
+    };
+    new FBXLoader(manager).load(url, (obj) => { object = obj; }, undefined, reject);
+  });
+}
+
 // Aceita .glb/.gltf e .fbx (formato que o Mixamo entrega); o resto do pipeline é igual.
 function loadGLB(url) {
   if (!gltfCache.has(url)) {
-    gltfCache.set(url, /\.fbx(\?|$)/i.test(url)
-      ? fbxLoader.loadAsync(url).then((object) => ({ scene: object, animations: object.animations }))
-      : loader.loadAsync(url));
+    gltfCache.set(url, /\.fbx(\?|$)/i.test(url) ? loadFBX(url) : loader.loadAsync(url));
   }
   return gltfCache.get(url);
 }

@@ -14,8 +14,8 @@
 export const MODELS = {
   // Zumbis do Mixamo (FBX). As texturas .png precisam estar na MESMA pasta do .fbx, com o nome original.
   copZombie: { url: '/models/zombies/copzombie_l_actisdato.fbx', height: 1.82 },
-  prisoner: { url: '/models/zombies/Prisoner_B_Styperek.fbx', height: 1.78 },
-  zombieGirl: { url: '/models/zombies/Zombiegirl_W_Kurniawan.fbx', height: 1.66 },
+  prisoner: { url: '/models/zombies/Prisoner%20B%20Styperek.fbx', height: 1.78 },
+  zombieGirl: { url: '/models/zombies/Zombiegirl%20W%20Kurniawan.fbx', height: 1.66 },
   // Corpo humano (vítima do banquete): continua o SWAT.
   swat: { url: '/models/character/swat.glb', height: 1.80 },
 };

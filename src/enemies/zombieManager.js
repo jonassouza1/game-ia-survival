@@ -202,8 +202,19 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   }
 
   // ── Criação ────────────────────────────────────────────────────────────
+  // Se um modelo não carregar (arquivo ausente / nome errado), usa o SWAT no lugar e avisa no console:
+  // um modelo com problema não pode derrubar o carregamento de todos os zumbis.
+  async function loadModelSafe(name) {
+    try {
+      return await loadZombieModel(MODELS[name]);
+    } catch (error) {
+      console.warn(`[zumbis] modelo "${name}" (${MODELS[name]?.url}) não carregou — usando o SWAT no lugar. Confira o nome do arquivo em public/models/zombies/.`, error);
+      return loadZombieModel(MODELS.swat);
+    }
+  }
+
   async function spawnZombie(loc, group, member, x, z, yaw, y, place = null) {
-    const model = await loadZombieModel(MODELS[member.model]);
+    const model = await loadModelSafe(member.model);
     const actor = createZombieActor(model, member.look, { castShadow: quality?.shadows !== 'none' });
     if (place) ({ x, z, yaw } = place(actor));
     const rand = Math.random;
@@ -227,7 +238,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   // Vítima caída no centro + zumbis de bruços ao redor, com a cabeça sobre o corpo dela.
   async function setupFeast(loc, group, g, floorY) {
     const { x: cx, z: cz } = g.center;
-    const model = await loadZombieModel(MODELS[g.victim.model]);
+    const model = await loadModelSafe(g.victim.model);
     const victim = createZombieActor(model, g.victim.look, { castShadow: true });
     victim.startDeath({ instant: true });
     const yaw = g.victim.yaw, c = Math.cos(yaw), s = Math.sin(yaw);
@@ -278,7 +289,8 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
         }
       }
     }
-    await Promise.all(tasks);
+    const results = await Promise.allSettled(tasks);
+    results.filter((r) => r.status === 'rejected').forEach((r) => console.error('Falha ao montar um grupo de zumbis:', r.reason));
     ready = true;
     for (const [loc, cfg] of Object.entries(LOCATIONS)) {
       for (const z of zombies) if (z.loc === loc) z.actor.root.visible = true;
