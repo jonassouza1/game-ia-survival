@@ -21,7 +21,7 @@ function boneByName(root, name) {
 }
 
 // Base do corpo (esquerda / cima / frente) no espaço do `root` na pose de repouso.
-export function computeBodyBasis(root) {
+function computeBodyBasis(root) {
   root.updateMatrixWorld(true);
   const pos = (n) => boneByName(root, n)?.getWorldPosition(new THREE.Vector3());
   const hips = pos('mixamorigHips'), head = pos('mixamorigHead');

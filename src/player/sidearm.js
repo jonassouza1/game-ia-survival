@@ -23,7 +23,7 @@ import * as THREE from 'three';
 // Referencial da pistola (unidades do rig): origem no centro da coronha,
 // +Z = boca do cano, +Y = massa de mira (para cima), +X = lado esquerdo da arma.
 
-const { clamp, lerp, smoothstep } = THREE.MathUtils;
+const { clamp, smoothstep } = THREE.MathUtils;
 
 // ── Ajustes ─────────────────────────────────────────────────────────────────────
 export const SIDEARM = {
@@ -65,7 +65,7 @@ const RELOAD_LEFT = [
 
 const smooth = (t) => t * t * (3 - 2 * t);
 
-export function createSidearm({ character, bones, pistol, mixerClips = [] }) {
+export function createSidearm({ character, bones, pistol }) {
   const socketBone = pistol.parent;
   const socketPos = pistol.position.clone();
   const socketQuat = pistol.quaternion.clone();
@@ -114,7 +114,7 @@ export function createSidearm({ character, bones, pistol, mixerClips = [] }) {
   const v1 = new THREE.Vector3(); const v2 = new THREE.Vector3(); const v3 = new THREE.Vector3();
   const fwdB = new THREE.Vector3(); const rightB = new THREE.Vector3(); const aimDir = new THREE.Vector3();
   const shoulderMid = new THREE.Vector3();
-  const qa = new THREE.Quaternion(); const qb = new THREE.Quaternion(); const qc = new THREE.Quaternion();
+  const qa = new THREE.Quaternion(); const qc = new THREE.Quaternion();
   const m4 = new THREE.Matrix4();
   const charQuat = new THREE.Quaternion(); const charQuatInv = new THREE.Quaternion();
   const socketWorldPos = new THREE.Vector3(); const socketWorldQuat = new THREE.Quaternion();
@@ -123,7 +123,6 @@ export function createSidearm({ character, bones, pistol, mixerClips = [] }) {
   const makePose = () => ({ p: new THREE.Vector3(), q: new THREE.Quaternion() });
   const gun = makePose(); const stage = makePose(); const ready = makePose(); const aim = makePose();
   const reloadPose = makePose(); const outPose = makePose();
-  const keys = { support: makePose(), magwell: makePose(), magwellIn: makePose(), pouch: makePose() };
   const handTarget = makePose();
 
   // Orientação com +Z = dir, +Y para cima (com rolagem opcional em torno de dir).
@@ -221,8 +220,7 @@ export function createSidearm({ character, bones, pistol, mixerClips = [] }) {
   }
 
   // ── Poses da arma ─────────────────────────────────────────────────────────────
-  // ctx: { x, y, z, bodyYaw, yaw, pitch, aimT, recoil, reloadTime }
-  function computeKeyPoses(ctx, wristLeftOffset) {
+  function computeKeyPoses() {
     // Posição de mira: braços à frente, arma na linha do esterno, um pouco à direita.
     aim.p.copy(shoulderMid).addScaledVector(aimDir, 0.47).addScaledVector(rightB, 0.055).addScaledVector(UP, -0.085);
     orient(aim.q, aimDir);
@@ -332,7 +330,7 @@ export function createSidearm({ character, bones, pistol, mixerClips = [] }) {
     bones.mixamorigLeftArm.getWorldPosition(v2);
     shoulderMid.addVectors(v1, v2).multiplyScalar(0.5);
 
-    computeKeyPoses(ctx);
+    computeKeyPoses();
 
     // Estágio (pronta → mira → recarga) com coice.
     const reloadProgress = ctx.reloadTime > 0 ? 1 - ctx.reloadTime / SIDEARM.reloadTime : -1;

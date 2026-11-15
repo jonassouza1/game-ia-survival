@@ -28,7 +28,6 @@ const TEXTURES = [
   'marble_tiles',              // piso do saguão
   'marble_01',                 // mármore liso (estátuas, guarnições)
   'granite_tile',              // pedestais e base das escadas
-  'stone_tiles',               // paredes de pedra lascada
   'large_grey_tiles',          // paredes de pedra lisa (ashlar)
   'wooden_panels',             // lambri e balcão da recepção
   'dark_wooden_planks',        // madeira escura (vigas, portas)
@@ -52,7 +51,6 @@ const HDRIS = [
   'abandoned_hall_01',         // ambiente do saguão
   'cobblestone_street_night',  // ambiente da rua
   'qwantani_night_puresky',    // céu noturno da rua
-  'wasteland_clouds',          // céu carregado (reserva)
 ];
 
 // Modelos CC0 (glTF 1k com texturas). `height` em metros só documenta a escala
@@ -69,11 +67,9 @@ const MODELS = [
   'ammo_box',
   'mantel_clock_01',
   'desk_lamp_arm_01',
-  'metal_office_desk',
   'SchoolDesk_01',
   'WoodenTable_02',
   'vintage_oil_lamp',
-  'antique_ceramic_vase_01',
   'vintage_telephone_wall_clock',
   'folding_wooden_stool',
   'fire_hydrant',
@@ -81,8 +77,6 @@ const MODELS = [
   'trashbag',
   'korean_public_payphone_01',
   'Barrel_01',
-  'utility_box_01',
-  'street_lamp_01',
 ];
 
 // Personagem e clipes Mixamo (licença Mixamo/Adobe, não CC0). O SWAT é o

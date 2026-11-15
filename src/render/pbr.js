@@ -66,7 +66,7 @@ function loadMap(url, kind) {
 }
 
 /** Carrega (uma vez) o conjunto de mapas de um material. */
-export function getTextureSet(id) {
+function getTextureSet(id) {
   let set = sets.get(id);
   if (set) return set;
   const base = `/textures/pbr/${id}`;
@@ -161,9 +161,4 @@ export function glow(color, intensity = 2, options = {}) {
     color: 0x000000, emissive: color, emissiveIntensity: intensity, roughness: 1, metalness: 0,
     ...options,
   });
-}
-
-/** Pré-carrega os conjuntos para evitar pop-in durante o primeiro frame. */
-export function preloadPBR(ids) {
-  return Promise.all(ids.map((id) => getTextureSet(id).ready));
 }

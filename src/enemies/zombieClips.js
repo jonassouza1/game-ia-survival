@@ -5,19 +5,15 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 // Para trocar/adicionar: coloque o FBX em public/animations/zombie/ e liste aqui.
 // Cada arquivo traz só o esqueleto + 1 clipe; é retargetado para cada personagem.
 // ─────────────────────────────────────────────────────────────────────────────
-export const CLIP_FILES = {
+const CLIP_FILES = {
   idle: 'idle.fbx',
   walk: 'walk.fbx',
-  run: 'run.fbx',
   attack: 'attack.fbx',
   scream: 'scream.fbx',
   death: 'death.fbx',
   dying: 'dying.fbx',
-  neckBite: 'neck_bite.fbx',
   biting: 'biting.fbx',
   biting2: 'biting2.fbx',
-  crawl: 'crawl.fbx',
-  runningCrawl: 'running_crawl.fbx',
 };
 
 // Opções de retarget por clipe: morte/"dying" mantêm o deslocamento da raiz (a queda precisa dele).

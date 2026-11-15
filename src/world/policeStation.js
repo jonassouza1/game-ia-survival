@@ -9,7 +9,7 @@ import { pbr, solid, glow } from '../render/pbr.js';
 import { CollisionWorld } from '../systems/collision.js';
 
 // Dimensões do saguão (metros). Norte = -z (escadas/estátua), Sul = +z (portas de entrada).
-export const HALL = { x0: -12, x1: 12, z0: -16, z1: 24, h: 9.2, gy: 4.6 };
+const HALL = { x0: -12, x1: 12, z0: -16, z1: 24, h: 9.2, gy: 4.6 };
 
 export function buildPoliceStation(scene) {
   const { x0, x1, z0, z1, h, gy } = HALL;
@@ -185,7 +185,7 @@ export function buildPoliceStation(scene) {
     octagonalTier(1.05, 1.05, 0.12, M.trim, 0, h - 1.55, z, 0.18);
     octagonalTier(0.5, 0.5, 0.4, M.brass, 0, h - 1.91, z, 0.18);
     for (let i = 0; i < 8; i++) {
-      const a = i * Math.PI / 4, x = Math.cos(a), zz = z + Math.sin(a);
+      const a = i * Math.PI / 4, x = Math.cos(a);
       const armPath = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, h - 1.55, z),
         new THREE.Vector3(x * 0.32, h - 1.43, z + Math.sin(a) * 0.32),
@@ -214,8 +214,8 @@ export function buildPoliceStation(scene) {
   // Cada parede é construída em coordenadas locais: z=0 é a face interna, +z entra na sala,
   // x local corre da esquerda para a direita de quem olha a parede.
   const WALLS = {
-    north: { pos: [0, z0], rot: 0, len: W, lx: (x, z) => x },
-    south: { pos: [0, z1], rot: Math.PI, len: W, lx: (x, z) => -x },
+    north: { pos: [0, z0], rot: 0, len: W, lx: (x) => x },
+    south: { pos: [0, z1], rot: Math.PI, len: W, lx: (x) => -x },
     west: { pos: [x0, cz], rot: Math.PI / 2, len: D, lx: (x, z) => cz - z },
     east: { pos: [x1, cz], rot: -Math.PI / 2, len: D, lx: (x, z) => z - cz },
   };

@@ -10,6 +10,7 @@ import { CollisionWorld } from './systems/collision.js';
 import { createEnemies } from './enemies/zombieManager.js';
 import { initPBR } from './render/pbr.js';
 import { createEnvironment } from './render/environment.js';
+import { createStorm } from './render/storm.js';
 import { createPostFX } from './render/postfx.js';
 import { resolveQuality, applyQuality, configureGroupShadows } from './render/quality.js';
 
@@ -56,6 +57,7 @@ let activeLocation = 'hall';
 const environment = createEnvironment(renderer, scene);
 const postfx = createPostFX(renderer, scene, camera, { quality });
 const audio = createAudio();
+const storm = createStorm({ scene, camera, environment, audio, quality });
 const overlay = document.querySelector('#overlay');
 const startButton = document.querySelector('#start');
 for (const button of document.querySelectorAll('[data-quality]')) {
@@ -244,7 +246,7 @@ window.addEventListener('resize', () => {
 
 // Gancho de depuração (console: __rpd.player.state)
 window.__rpd = {
-  THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality,
+  THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality, storm,
   activeCollisions, hallWorld, streetWorld, enemies, health, damagePlayer,
   step: (dt = 1 / 60) => frame(dt),
 };
@@ -255,6 +257,7 @@ function frame(dt) {
   t += dt;
   player.update(dt);
   world.update(t, dt, camera.position);
+  storm.update(dt, activeLocation, streetWorld);
   if (player.state.active && !player.state.paused) enemies.update(dt, activeLocation);
   interaction.update(dt, player.state);
   reticle.classList.toggle('on', player.state.aimT > 0.5);

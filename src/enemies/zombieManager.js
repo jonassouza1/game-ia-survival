@@ -292,7 +292,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
     const results = await Promise.allSettled(tasks);
     results.filter((r) => r.status === 'rejected').forEach((r) => console.error('Falha ao montar um grupo de zumbis:', r.reason));
     ready = true;
-    for (const [loc, cfg] of Object.entries(LOCATIONS)) {
+    for (const loc of Object.keys(LOCATIONS)) {
       for (const z of zombies) if (z.loc === loc) z.actor.root.visible = true;
     }
   }
@@ -301,7 +301,7 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
   function wakeGroup(group, quick = false, culprit = null) {
     if (group.awake) return;
     group.awake = true;
-    group.zombies.forEach((z, i) => {
+    group.zombies.forEach((z) => {
       if (z.state === 'dead') return;
       z.wakeAt = clock + (quick ? (z === culprit ? 0 : 0.15 + Math.random() * 0.45) : Math.random() * 0.9);
       z.waking = true;
@@ -430,7 +430,6 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
     z.actor.startDeath({ headshot: hit.zone === 'head', fromFront: dirLocal.z < 0 });
     z.deathAge = 0;
     audio?.zombieGroan?.({ volume: 0.55, rate: 0.7 + Math.random() * 0.15, dying: true });
-    const deathPos = z.actor.root.position;
     z.poolAt = 1.6;
   }
 
@@ -531,7 +530,6 @@ export function createEnemies({ scene, locations, getPlayer, getActiveCollisions
         z.deathAge += dt;
         if (z.poolAt !== undefined && z.deathAge > z.poolAt) {
           z.poolAt = undefined;
-          const p = a.root.position;
           const hp = a.bones.Hips.getWorldPosition(new THREE.Vector3());
           z.pool = bloodPool(z.loc, hp.x, z.y, hp.z, 1.5 + Math.random() * 0.5, 7);
         }

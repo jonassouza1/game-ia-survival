@@ -1,8 +1,8 @@
 // Ambiência e música sintetizadas localmente; não dependem de arquivos externos.
 export function createAudio() {
   let ctx, master, shotBus, musicGainNode, streetMusicGainNode, started = false, stepClock = 0;
-  let musicTimer, streetMusicTimer, thunderTimer, zombieTimer;
-  let rainLayerGainNode, rainDetailGainNode;
+  let zombieTimer;
+  let rainDetailGainNode;
   let gunshotBuffer, reloadBuffer, reloadBufferPromise, zombieMoanBuffer, zombieHordeBuffer;
   const zombieVoices = new Set();
   let environment = 'hall', rainGainNode, windGainNode;
@@ -111,8 +111,8 @@ export function createAudio() {
       note.start(now);
       note.stop(now + 5.6);
     };
-    playBar(); musicTimer = setInterval(playBar, 8000);
-    streetMusicTimer = setInterval(playStreetCue, 16000);
+    playBar(); setInterval(playBar, 8000);
+    setInterval(playStreetCue, 16000);
   }
 
   async function loadAudioAsset(path) {
@@ -227,26 +227,39 @@ export function createAudio() {
       if (environment === 'street') playZombieAmbience();
     });
 
-    // Trovões distantes e irregulares, construídos com ruído filtrado e subgrave.
-    const thunder = () => {
-      if (!started) return;
-      thunderTimer = setTimeout(() => {
-        if (!started) return;
-        const now = ctx.currentTime;
-        const outdoors = environment === 'street';
-        const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), amp = ctx.createGain();
-        src.buffer = noiseBuffer(outdoors ? 5 : 3.5); filter.type = 'lowpass'; filter.frequency.value = outdoors ? 240 + Math.random() * 180 : 180 + Math.random() * 120;
-        amp.gain.setValueAtTime(0.0001, now);
-        amp.gain.linearRampToValueAtTime(outdoors ? 0.72 : 0.045, now + (outdoors ? 0.42 : 0.22));
-        amp.gain.setValueAtTime(outdoors ? 0.52 : 0.028, now + (outdoors ? 0.9 : 0.55));
-        amp.gain.exponentialRampToValueAtTime(0.0001, now + (outdoors ? 7.2 : 4.2));
-        src.connect(filter).connect(amp).connect(master); src.start(now); src.stop(now + (outdoors ? 4.9 : 3.4));
-        tone(42 + Math.random() * 16, outdoors ? 5.6 : 3.4, 'sine', outdoors ? 0.48 : 0.035, 24);
-        thunder();
-      }, 12000 + Math.random() * 20000);
-    };
-    thunder();
     scheduleZombie();
+  }
+  // Trovão disparado pelo controlador da tempestade (render/storm.js).
+  // delay: segundos entre o clarão e o som (distância); power 0..1: quão perto caiu.
+  // Estalo curto (ruído agudo) só nos próximos + ronco longo (ruído grave) + subgrave.
+  function thunder(delay = 0, power = 1) {
+    if (!started || !ctx) return;
+    window.setTimeout(() => {
+      if (!started) return;
+      const now = ctx.currentTime;
+      const outdoors = environment === 'street';
+      const p = Math.min(1, Math.max(0.1, power));
+      const level = outdoors ? 1 : 0.6;                // dentro do saguão chega abafado, mas audível
+      if (p > 0.55) {
+        const crack = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), amp = ctx.createGain();
+        crack.buffer = noiseBuffer(0.9); hp.type = 'bandpass'; hp.frequency.value = outdoors ? 1300 : 420; hp.Q.value = 0.6;
+        amp.gain.setValueAtTime(0.0001, now);
+        amp.gain.linearRampToValueAtTime(0.55 * p * level, now + 0.012);
+        amp.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+        crack.connect(hp).connect(amp).connect(master); crack.start(now); crack.stop(now + 0.9);
+      }
+      const rumbleLen = 3.5 + p * 4.5;
+      const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), amp = ctx.createGain();
+      src.buffer = noiseBuffer(rumbleLen); filter.type = 'lowpass';
+      filter.frequency.setValueAtTime((outdoors ? 420 : 200) + p * 160, now);
+      filter.frequency.exponentialRampToValueAtTime(110, now + rumbleLen);
+      amp.gain.setValueAtTime(0.0001, now);
+      amp.gain.linearRampToValueAtTime(0.78 * p * level, now + 0.35 + (1 - p) * 0.5);
+      amp.gain.setValueAtTime(0.52 * p * level, now + 0.9 + (1 - p));
+      amp.gain.exponentialRampToValueAtTime(0.0001, now + rumbleLen);
+      src.connect(filter).connect(amp).connect(master); src.start(now); src.stop(now + rumbleLen);
+      tone(40 + Math.random() * 16, 3 + p * 3, 'sine', 0.5 * p * level, 22);
+    }, Math.max(0, delay) * 1000);
   }
   function setEnvironment(location) {
     environment = location === 'street' ? 'street' : 'hall';
@@ -267,7 +280,7 @@ export function createAudio() {
     scheduleZombie(environment === 'street' ? 650 : 15000 + Math.random() * 12000);
   }
 
-  function footstep(speed = 2) {
+  function footstep() {
     if (!started) return;
     const now = ctx.currentTime;
     const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), amp = ctx.createGain();
@@ -280,7 +293,7 @@ export function createAudio() {
   function update(dt, speed) {
     if (speed < 0.35) { stepClock = 0; return; }
     stepClock -= dt;
-    if (stepClock <= 0) { footstep(speed); stepClock = Math.max(0.42, 0.78 - speed * 0.1); }
+    if (stepClock <= 0) { footstep(); stepClock = Math.max(0.42, 0.78 - speed * 0.1); }
   }
   function toggleFlashlight(on) { if (started) tone(on ? 740 : 520, 0.055, 'square', 0.025, on ? 420 : 300); }
   function interaction() { tone(680, 0.08, 'square', 0.035, 460); }
@@ -423,5 +436,5 @@ export function createAudio() {
     fleshHit({ head: false });
   }
 
-  return { start, setEnvironment, update, toggleFlashlight, interaction, gunshot, emptyGun, reload, zombieGroan, fleshHit, playerHurt };
+  return { start, setEnvironment, thunder, update, toggleFlashlight, interaction, gunshot, emptyGun, reload, zombieGroan, fleshHit, playerHurt };
 }

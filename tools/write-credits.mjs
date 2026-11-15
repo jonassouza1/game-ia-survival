@@ -39,8 +39,8 @@ Personagem e animações (Mixamo/Adobe, não CC0)
 - public/models/character/Soldier.glb — "Soldier" — Mixamo, via exemplos do
   three.js (https://github.com/mrdoob/three.js). Usado apenas como fonte dos
   clipes Idle/Walk/Run, retargetados para o esqueleto do SWAT.
-- O personagem antigo em public/models/leon foi removido; o modelo procedural
-  de fallback continua no código, sem depender de assets externos.
+- O personagem antigo em public/models/leon e o boneco procedural de reserva
+  foram removidos; o SWAT é o único personagem jogável.
 
 Os arquivos ficam em public/textures/pbr/, public/hdri/,
 public/models/polyhaven/ e public/models/character/. O script
@@ -49,7 +49,6 @@ tools/write-credits.mjs regenera esta lista.
 
 Assets CC0 já presentes no projeto
 ----------------------------------
-- public/models/service_pistol/ — Poly Haven, https://polyhaven.com/a/service_pistol — CC0 1.0
 - public/models/covered_car/ — Poly Haven — CC0 1.0 (atribuição em ASSET.txt)
 - public/audio/beretta-m9-shot.mp3 — SoundBible, "Barreta M9" — domínio público
   https://soundbible.com/1906-Barreta-M9.html

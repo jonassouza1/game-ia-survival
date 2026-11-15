@@ -6,8 +6,7 @@ import { retargetMixamoClip } from '../player/retarget.js';
 import { loadClipLibrary, CLIP_OPTIONS } from './zombieClips.js';
 import { bakeRestCoords, makeZombieMaterial } from './zombieAppearance.js';
 
-const { clamp, lerp, smoothstep } = THREE.MathUtils;
-const TAU = Math.PI * 2;
+const { clamp } = THREE.MathUtils;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. CARREGAMENTO
@@ -244,7 +243,7 @@ function rayCapsule(ro, rd, pa, pb, r) {
 //    a cada tiro (tronco/cabeça/membro atingido).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ONCE = new Set(['attack', 'scream', 'biting', 'death', 'dying', 'neckBite']);
+const ONCE = new Set(['attack', 'scream', 'biting', 'death', 'dying']);
 const RISE_START = 4.0;        // dentro do clipe "biting": a partir daqui ele se apoia e levanta
 
 export function createZombieActor(model, look = {}, { castShadow = true } = {}) {
@@ -562,9 +561,6 @@ function fitHitParts(scene) {
   return { parts, head: headPart };
 }
 
-const _tmpA = new THREE.Vector3();
-const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _hc = new THREE.Vector3();
-const _w = new Map();   // pontos de mundo reutilizados por parte
 export function raycastActor(actor, origin, dir, maxDistance = 50) {
   const fit = actor.hit;
   if (!fit) return null;

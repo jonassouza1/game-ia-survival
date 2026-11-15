@@ -104,6 +104,7 @@ src/
     postfx.js             composer (GTAO, bloom, ACES, grade)
     quality.js            detecção de GPU e presets
     lightPool.js          pool fixo de luzes pontuais
+    storm.js              nuvens, raios, clarões e trovões da rua (um controlador só)
   world/
     builder.js            merge de geometria, UV de mundo, vertex AO
     policeStation.js      saguão da R.P.D.
@@ -123,8 +124,20 @@ tools/
   pistola.
 - O quarteirão da rua ainda usa várias caixas de fachada combinadas com
   modelos de prédio; o foco do realismo ficou no saguão e nos props.
-- O céu noturno é um HDRI 1k escurecido; em telas muito grandes pode faltar
-  resolução nas estrelas.
+- O céu noturno é um HDRI 1k escurecido, coberto por uma cúpula de nuvens em
+  shader (`storm.js`); em telas muito grandes pode faltar resolução nas estrelas.
+
+## Tempestade (rua)
+
+`src/render/storm.js` controla tudo num só lugar: cada descarga sorteia direção e distância, e dela saem juntos o
+**raio** (faixas ramificadas com halo; só nas descargas próximas), o **clarão** (várias piscadas, que acendem o céu, as
+nuvens, a luz ambiente e a `stormLight` da rua) e o **trovão** (`audio.thunder(atraso, potência)`), que chega depois do
+clarão em proporção à distância e fica abafado dentro do saguão. As nuvens são uma cúpula de shader que acompanha a câmera
+(raio 100, abaixo do `far` de 110); o número de oitavas de ruído depende do preset de qualidade.
+
+Ajustes rápidos, em `createStorm` e `strike` (`storm.js`): intervalo entre descargas (`nextStrike = rand(7, 19)`), proporção de descargas
+próximas (`near = Math.random() < 0.7`), chance de descarga dupla (`0.25`) e distâncias (`R`). Para testar sem esperar,
+no console: `__rpd.storm.strike({ near: true })`.
 
 ## Zumbis (inimigos)
 
@@ -140,8 +153,8 @@ Código em `src/enemies/`:
 
 **Animações usadas** (Mixamo): `idle` (policiais parados) · `scream` (policiais notam você) · `biting2` (comendo a vítima) ·
 `biting` (trecho final: levantar) · `walk` (perseguição) · `attack` (mordida; o dano cai no contato) ·
-`death` (headshot, cai de costas) · `dying` (tiros no corpo, ajoelha e desaba). Disponíveis e ainda sem uso:
-`run`, `crawl`, `runningCrawl`, `neckBite`.
+`death` (headshot, cai de costas) · `dying` (tiros no corpo, ajoelha e desaba). Para usar outra animação Mixamo,
+baixe o FBX em `public/animations/zombie/` e acrescente a entrada em `CLIP_FILES` (`zombieClips.js`).
 
 **Dano por zona** (vida 100): cabeça 100 (1 tiro) · pescoço 50 · peito 34 (3 tiros) · abdômen 30 · braço 12 · perna 20.
 Se a bala passa pelo braço e continua para o tronco, conta como peito/abdômen.

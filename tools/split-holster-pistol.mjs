@@ -93,7 +93,7 @@ function accessorBytes(json, bin, index) {
 }
 
 function readFloats(json, bin, index) {
-  const { accessor, itemSize, stride, start, count } = accessorBytes(json, bin, index);
+  const { accessor, stride, start, count } = accessorBytes(json, bin, index);
   const comps = TYPE_SIZE[accessor.type];
   const [Type] = COMPONENT[accessor.componentType];
   const out = new Float64Array(count * comps);

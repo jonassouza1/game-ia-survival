@@ -10,14 +10,17 @@ const LOCATIONS = {
   hall: {
     environment: 'abandoned_hall_01',
     intensity: 0.45,
+    flashEnv: 0.1,          // clarão que entra pelas janelas do saguão
     background: null,
     backgroundColor: 0x050604,
   },
   street: {
     environment: 'cobblestone_street_night',
     intensity: 0.26,
+    flashEnv: 1.1,
     background: 'qwantani_night_puresky',
     backgroundIntensity: 0.055,
+    flashBg: 0.5,
     backgroundColor: 0x03070b,
   },
 };
@@ -29,6 +32,7 @@ export function createEnvironment(renderer, scene) {
   const raw = new Map();
   const pmremMap = new Map();
   let location = 'hall';
+  let flash = 0;
 
   function load(id) {
     if (raw.has(id)) return raw.get(id);
@@ -47,19 +51,27 @@ export function createEnvironment(renderer, scene) {
     return promise;
   }
 
+  // Soma o clarão (0..1) de um relâmpago à intensidade-base do ambiente e do céu.
+  function setFlash(amount) {
+    flash = amount;
+    const config = LOCATIONS[location];
+    if (scene.environment) scene.environmentIntensity = config.intensity + amount * (config.flashEnv ?? 0);
+    if (config.background) scene.backgroundIntensity = (config.backgroundIntensity ?? 1) + amount * (config.flashBg ?? 0);
+  }
+
   function apply(next) {
     location = next;
     const config = LOCATIONS[next];
     if (!config) return;
     const env = pmremMap.get(config.environment);
     scene.environment = env ?? null;
-    scene.environmentIntensity = env ? config.intensity : 0;
+    scene.environmentIntensity = env ? config.intensity + flash * (config.flashEnv ?? 0) : 0;
 
     if (config.background) {
       const background = raw.get(config.background);
       const texture = background && typeof background.then !== 'function' ? background : null;
       scene.background = texture ?? new THREE.Color(config.backgroundColor);
-      scene.backgroundIntensity = config.backgroundIntensity ?? 1;
+      scene.backgroundIntensity = (config.backgroundIntensity ?? 1) + flash * (config.flashBg ?? 0);
       scene.backgroundBlurriness = 0;
     } else {
       scene.background = new THREE.Color(config.backgroundColor);
@@ -76,5 +88,5 @@ export function createEnvironment(renderer, scene) {
   load(LOCATIONS.street.background);
   apply('hall');
 
-  return { apply, get location() { return location; } };
+  return { apply, setFlash, get location() { return location; } };
 }

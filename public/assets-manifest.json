@@ -16,10 +16,6 @@
       "path": "/textures/pbr/granite_tile/"
     },
     {
-      "id": "stone_tiles",
-      "path": "/textures/pbr/stone_tiles/"
-    },
-    {
       "id": "large_grey_tiles",
       "path": "/textures/pbr/large_grey_tiles/"
     },
@@ -92,10 +88,6 @@
     {
       "id": "qwantani_night_puresky",
       "path": "/hdri/qwantani_night_puresky_1k.hdr"
-    },
-    {
-      "id": "wasteland_clouds",
-      "path": "/hdri/wasteland_clouds_1k.hdr"
     }
   ],
   "models": [
@@ -144,10 +136,6 @@
       "path": "/models/polyhaven/desk_lamp_arm_01/desk_lamp_arm_01.gltf"
     },
     {
-      "id": "metal_office_desk",
-      "path": "/models/polyhaven/metal_office_desk/metal_office_desk.gltf"
-    },
-    {
       "id": "SchoolDesk_01",
       "path": "/models/polyhaven/SchoolDesk_01/SchoolDesk_01.gltf"
     },
@@ -158,10 +146,6 @@
     {
       "id": "vintage_oil_lamp",
       "path": "/models/polyhaven/vintage_oil_lamp/vintage_oil_lamp.gltf"
-    },
-    {
-      "id": "antique_ceramic_vase_01",
-      "path": "/models/polyhaven/antique_ceramic_vase_01/antique_ceramic_vase_01.gltf"
     },
     {
       "id": "vintage_telephone_wall_clock",
@@ -190,14 +174,6 @@
     {
       "id": "Barrel_01",
       "path": "/models/polyhaven/Barrel_01/Barrel_01.gltf"
-    },
-    {
-      "id": "utility_box_01",
-      "path": "/models/polyhaven/utility_box_01/utility_box_01.gltf"
-    },
-    {
-      "id": "street_lamp_01",
-      "path": "/models/polyhaven/street_lamp_01/street_lamp_01.gltf"
     }
   ],
   "characters": [

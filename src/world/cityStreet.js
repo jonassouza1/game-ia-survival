@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CollisionWorld } from '../systems/collision.js';
 import { createProps } from './props.js';
 import { LightPool } from '../render/lightPool.js';
@@ -101,14 +102,58 @@ export function buildCityStreet(group) {
   };
   let streetSeed = 0x2d8147;
   const streetRandom = () => ((streetSeed = (Math.imul(streetSeed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  // Caixas estáticas ligadas direto ao grupo da rua: no fim da construção elas são
+  // fundidas por material e por célula espacial (ver mergeStaticBoxes), o que troca
+  // centenas de draw calls (e de passes de sombra) por algumas dezenas.
+  const staticBoxes = [];
   const box = (w, h, d, material, x, y, z, parent = group) => {
     const geometry = new THREE.BoxGeometry(w, h, d);
     worldUV(geometry, material.userData.tile ?? 2);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
     parent.add(mesh);
+    if (parent === group) staticBoxes.push(mesh);
     return mesh;
   };
+  const MERGE_CELL = 16;      // metros: mantém culling e raycast locais
+  const MERGE_BIG = 24;       // caixas maiores que isso (pista, calçadas) ficam num balde próprio
+  // As caixas originais saem da cena mas continuam como alvos de raycast (câmera, tiros, mira):
+  // a colisão fica idêntica à de antes e só o desenho usa a geometria fundida.
+  const occluderProxies = [];
+  function mergeStaticBoxes() {
+    const buckets = new Map();
+    for (const mesh of staticBoxes) {
+      const material = mesh.material;
+      if (mesh.parent !== group || material.transparent) continue;
+      const { width, height, depth } = mesh.geometry.parameters;
+      const cell = Math.max(width, height, depth) > MERGE_BIG
+        ? 'big'
+        : `${Math.floor(mesh.position.x / MERGE_CELL)},${Math.floor(mesh.position.z / MERGE_CELL)}`;
+      const key = `${material.uuid}|${mesh.castShadow ? 1 : 0}|${mesh.receiveShadow ? 1 : 0}|${cell}`;
+      let bucket = buckets.get(key);
+      if (!bucket) buckets.set(key, bucket = { material, cast: mesh.castShadow, receive: mesh.receiveShadow, meshes: [] });
+      bucket.meshes.push(mesh);
+    }
+    for (const { material, cast, receive, meshes } of buckets.values()) {
+      if (meshes.length < 2) continue;
+      const geometries = meshes.map((mesh) => {
+        mesh.updateMatrix();
+        return mesh.geometry.clone().applyMatrix4(mesh.matrix);
+      });
+      const merged = mergeGeometries(geometries, false);
+      geometries.forEach((geometry) => geometry.dispose());
+      if (!merged) continue;
+      const combined = new THREE.Mesh(merged, material);
+      combined.castShadow = cast; combined.receiveShadow = receive;
+      combined.userData.renderOnly = true;
+      group.add(combined);
+      for (const mesh of meshes) {
+        mesh.updateMatrixWorld(true);
+        group.remove(mesh);
+        occluderProxies.push(mesh);
+      }
+    }
+  }
   const occluders = [];
   const streetLightPool = new LightPool(group, { count: 8 });
   const modelLoader = new GLTFLoader();
@@ -421,156 +466,9 @@ export function buildCityStreet(group) {
   box(0.16, 0.76, 0.12, materials.rust, 0, 11.6, 67.6);
   box(0.56, 0.16, 0.12, materials.rust, 0, 11.6, 67.6);
 
-  const skylineCanvas = document.createElement('canvas');
-  skylineCanvas.width = 1024;
-  skylineCanvas.height = 384;
-  const skylineContext = skylineCanvas.getContext('2d');
-  // O céu do canvas fica transparente: o HDRI da tempestade aparece atrás
-  // e as silhuetas de prédios continuam recortando o horizonte.
-  skylineContext.clearRect(0, 0, 1024, 384);
-  skylineContext.fillStyle = 'rgba(70, 82, 91, 0.035)';
-  skylineContext.beginPath();
-  skylineContext.ellipse(520, 195, 370, 45, 0, 0, Math.PI * 2);
-  skylineContext.fill();
-  for (const layer of [
-    { base: 304, color: '#080d10', width: 52, maxHeight: 116, windowAlpha: 0.055 },
-    { base: 338, color: '#05090c', width: 37, maxHeight: 77, windowAlpha: 0.075 },
-  ]) {
-    skylineContext.fillStyle = layer.color;
-    for (let x = -10; x < 1034;) {
-      const width = layer.width * (0.65 + streetRandom() * 0.8);
-      const height = 28 + streetRandom() * layer.maxHeight;
-      const top = layer.base - height;
-      skylineContext.fillRect(x, top, width, height + 60);
-      if (streetRandom() > 0.73) {
-        skylineContext.fillRect(x + width * 0.35, top - 14, width * 0.3, 14);
-      }
-      if (streetRandom() > 0.48) {
-        skylineContext.fillStyle = '#020507';
-        skylineContext.beginPath();
-        skylineContext.moveTo(x + width * (0.2 + streetRandom() * 0.35), top);
-        skylineContext.lineTo(x + width * (0.42 + streetRandom() * 0.25), top);
-        skylineContext.lineTo(x + width * 0.35, top + 8 + streetRandom() * 17);
-        skylineContext.lineTo(x + width * 0.28, top + 3);
-        skylineContext.closePath();
-        skylineContext.fill();
-      }
-      for (let wy = layer.base - height + 12; wy < layer.base - 8; wy += 15) {
-        for (let wx = x + 7; wx < x + width - 5; wx += 13) {
-          if (streetRandom() > 0.84) {
-            skylineContext.fillStyle = `rgba(218, 174, 105, ${layer.windowAlpha})`;
-            skylineContext.fillRect(wx, wy, 4, 6);
-            skylineContext.fillStyle = layer.color;
-          }
-        }
-      }
-      if (streetRandom() > 0.55) {
-        skylineContext.fillStyle = 'rgba(2,4,5,.88)';
-        skylineContext.fillRect(
-          x + width * (0.25 + streetRandom() * 0.4),
-          layer.base - height + 12 + streetRandom() * Math.max(1, height - 28),
-          7 + streetRandom() * 13,
-          12 + streetRandom() * 24,
-        );
-      }
-      x += width + 4;
-    }
-  }
-  for (let i = 0; i < 48; i++) {
-    skylineContext.fillStyle = `rgba(112, 121, 126, ${0.012 + streetRandom() * 0.022})`;
-    skylineContext.fillRect(streetRandom() * 1024, 180 + streetRandom() * 170, 2 + streetRandom() * 28, 1);
-  }
-  const skylineTexture = new THREE.CanvasTexture(skylineCanvas);
-  skylineTexture.colorSpace = THREE.SRGBColorSpace;
-  const skyline = new THREE.Mesh(
-    new THREE.PlaneGeometry(76, 28),
-    new THREE.MeshBasicMaterial({
-      map: skylineTexture, fog: false, side: THREE.DoubleSide,
-      transparent: true, depthWrite: false,
-    }),
-  );
-  skyline.position.set(0, 14, 96);
-  skyline.rotation.y = Math.PI;
-  skyline.visible = false;
-  group.add(skyline);
-
-  const createSideCityTexture = (seed) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 384;
-    const ctx = canvas.getContext('2d');
-    let sideSeed = seed;
-    const random = () => ((sideSeed = (Math.imul(sideSeed, 1664525) + 1013904223) >>> 0) / 4294967296);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    for (const layer of [
-      { base: 310, color: '#0a1013', width: 42, maxHeight: 100, windowAlpha: 0.06 },
-      { base: 380, color: '#151816', width: 118, maxHeight: 140, windowAlpha: 0.09 },
-    ]) {
-      for (let x = -10; x < canvas.width;) {
-        const width = layer.width * (0.65 + random() * 0.8);
-        const height = 28 + random() * layer.maxHeight;
-        const top = layer.base - height;
-        ctx.fillStyle = layer.color;
-        ctx.fillRect(x, top, width, height + 40);
-        ctx.fillStyle = 'rgba(0,0,0,.48)';
-        ctx.fillRect(x + width * 0.48, top, Math.max(3, width * 0.12), height);
-        if (random() > 0.7) {
-          ctx.fillStyle = '#171d20';
-          ctx.fillRect(x + width * 0.2, top - 12, width * 0.6, 12);
-        }
-
-        const columns = Math.max(1, Math.floor(width / 18));
-        const rows = Math.max(1, Math.floor(height / 22));
-        for (let row = 0; row < rows; row++) {
-          for (let column = 0; column < columns; column++) {
-            const wx = x + 7 + column * (width - 13) / columns;
-            const wy = top + 10 + row * (height - 16) / rows;
-            if (random() > 0.86) {
-              const glow = random() > 0.72 ? '158,105,66' : '122,139,143';
-              ctx.fillStyle = `rgba(${glow},${layer.windowAlpha})`;
-              ctx.fillRect(wx, wy, 4, 7);
-            }
-          }
-        }
-        if (random() > 0.48) {
-          ctx.fillStyle = 'rgba(1,3,4,.86)';
-          ctx.fillRect(
-            x + width * (0.18 + random() * 0.52),
-            top + 8 + random() * Math.max(1, height - 28),
-            5 + random() * 14,
-            10 + random() * 24,
-          );
-        }
-        if (layer.base === 380 && random() > 0.45) {
-          ctx.strokeStyle = 'rgba(3,5,5,.82)';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(x + width * 0.18, top + 12);
-          ctx.lineTo(x + width * 0.18, layer.base - 4);
-          ctx.moveTo(x + width * 0.18, top + 42);
-          ctx.lineTo(x + width * 0.82, top + 42);
-          ctx.stroke();
-        }
-        x += width + 3;
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    return texture;
-  };
-  const urbanHorizon = new THREE.Mesh(
-    new THREE.PlaneGeometry(144, 54),
-    new THREE.MeshBasicMaterial({
-      map: createSideCityTexture(0x38c25), fog: false, side: THREE.DoubleSide,
-      transparent: true, depthWrite: false,
-    }),
-  );
-  urbanHorizon.position.set(0, 27, 88);
-  urbanHorizon.rotation.y = Math.PI;
-  urbanHorizon.visible = false;
-  group.add(urbanHorizon);
+  // Cidade ao fundo (skyline/horizonte urbano) e estrelas ficavam sempre invisíveis e foram
+  // removidos; o gerador pseudoaleatório avança o mesmo tanto para não alterar o que vem depois.
+  for (let i = 0; i < 1168; i++) streetRandom();
 
   box(18, 8.5, 0.7, materials.brickSoot, 0, 4.2, -10.15);
   box(18.5, 0.38, 0.95, materials.trim, 0, 8.65, -10.15);
@@ -735,7 +633,7 @@ export function buildCityStreet(group) {
   })();
   const embers = [];
   const addWreck = (asset, position, rotationY, height, tint) => {
-    loadStreetModel(asset, { height, position, rotationY, tint }, (wreck) => {
+    loadStreetModel(asset, { height, position, rotationY, tint }, () => {
       if (asset.includes('broken_car')) {
         car.visible = false;
         fire.position.set(position.x, 0, position.z);
@@ -1085,18 +983,7 @@ export function buildCityStreet(group) {
   moon.shadow.bias = -0.0006;
   moon.shadow.normalBias = 0.05;
   group.add(moon, moon.target);
-  const stars = new Float32Array(180);
-  for (let i = 0; i < stars.length; i += 3) {
-    stars[i] = (streetRandom() - 0.5) * 55;
-    stars[i + 1] = 11 + streetRandom() * 20;
-    stars[i + 2] = -9 + streetRandom() * 88;
-  }
-  const starField = new THREE.Points(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(stars, 3)),
-    new THREE.PointsMaterial({ color: 0x9caec6, size: 0.11, transparent: true, opacity: 0.72, sizeAttenuation: true }),
-  );
-  starField.visible = false;
-  group.add(starField);
+  for (let i = 0; i < 180; i++) streetRandom();
   const rainCount = 1200;
   const rainPositions = new Float32Array(rainCount * 6);
   const rainSeeds = new Float32Array(rainCount);
@@ -1208,25 +1095,23 @@ export function buildCityStreet(group) {
   stormLight.position.set(-7, 22, 38);
   group.add(stormLight);
   const poolCamera = new THREE.Vector3(0, 2, 30);
-  let flashTimer = 4 + streetRandom() * 8;
-  let flashStrength = 0;
   let elapsed = 0;
-  group.traverse((object) => { if (object.isMesh) occluders.push(object); });
+  mergeStaticBoxes();
+  group.traverse((object) => { if (object.isMesh && !object.userData.renderOnly) occluders.push(object); });
+  occluders.push(...occluderProxies);
 
   return {
     collisions,
     occluders,
     props,
+    // Clarão da tempestade: o controlador (render/storm.js) dá a força 0..1 e a direção do raio.
+    setStormFlash(strength, x, y, z) {
+      stormLight.intensity = strength * 65;
+      if (strength > 0) stormLight.position.set(x, y, z);
+    },
     update(timeOrDelta = 0, dt = timeOrDelta, cameraPosition = null) {
       elapsed += dt;
       rainMaterial.uniforms.time.value = elapsed;
-      flashTimer -= dt;
-      if (flashTimer <= 0) {
-        flashTimer = 9 + streetRandom() * 18;
-        flashStrength = 1;
-      }
-      flashStrength = Math.max(0, flashStrength - dt * 2.8);
-      stormLight.intensity = flashStrength * 65;
       for (let drop = 0; drop < rainCount; drop++) {
         const offset = drop * 6;
         const oldY = rainPositions[offset + 1];
