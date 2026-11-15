@@ -6,6 +6,7 @@ export function createAudio() {
   let gunshotBuffer, reloadBuffer, reloadBufferPromise, zombieMoanBuffer, zombieHordeBuffer;
   const zombieVoices = new Set();
   let environment = 'hall', rainGainNode, windGainNode;
+  let hospitalMode = false;      // hospital: acústica de ambiente fechado, mas sem a música do R.P.D.
 
   function noiseBuffer(seconds) {
     const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
@@ -263,12 +264,13 @@ export function createAudio() {
   }
   function setEnvironment(location) {
     environment = location === 'street' ? 'street' : 'hall';
+    hospitalMode = location === 'hospital';
     if (!started || !ctx) return;
     const now = ctx.currentTime;
     rainGainNode.gain.setTargetAtTime(environment === 'street' ? 0.28 : 0.035, now, 0.7);
     rainDetailGainNode.gain.setTargetAtTime(environment === 'street' ? 0.105 : 0.012, now, 0.8);
     windGainNode.gain.setTargetAtTime(environment === 'street' ? 0.19 : 0.10, now, 0.9);
-    musicGainNode.gain.setTargetAtTime(environment === 'street' ? 0 : 0.82, now, 1.8);
+    musicGainNode.gain.setTargetAtTime(environment === 'street' || hospitalMode ? 0 : 0.82, now, 1.8);
     streetMusicGainNode.gain.setTargetAtTime(environment === 'street' ? 0.46 : 0, now, 1.8);
     if (environment === 'hall') {
       zombieVoices.forEach(({ source, gain }) => {

@@ -42,6 +42,23 @@ export const LOCATIONS = {
     ],
   },
 
+  // ── Hospital: pacientes e equipe infectados, parados no escuro até perceberem o jogador ──
+  hospital: {
+    groups: [
+      {
+        name: 'pacientes',
+        kind: 'idle',
+        wakeRadius: 5.5,
+        members: [
+          { model: 'prisoner', x: -0.6, z: -12.4, yaw: 0.3, look: textured({ seed: 31, blood: 0.8 }) },   // corredor
+          { model: 'zombieGirl', x: -6.4, z: -3.2, yaw: 1.9, look: textured({ seed: 32, blood: 0.7 }) },  // enfermaria
+          { model: 'copZombie', x: 6.0, z: -19.6, yaw: -2.4, look: textured({ seed: 33, blood: 0.6 }) },  // UTI
+          { model: 'prisoner', x: -7.8, z: -20.2, yaw: 0.9, look: textured({ seed: 34, blood: 0.8 }) },   // necrotério
+        ],
+      },
+    ],
+  },
+
   // ── Rua: 5 zumbis agachados comendo uma vítima, à frente do carro em chamas ──
   street: {
     groups: [

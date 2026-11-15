@@ -22,11 +22,19 @@
 Nuvens em shader, raios ramificados, clarões em várias piscadas e trovão sincronizado por distância.
 Veja a seção "Tempestade" do README.
 
+## Novo: hospital abandonado (`src/world/hospital.js`)
+Cenário completo no fim da rua, com porta de entrada na fachada e porta de saída de volta à rua. `main.js` passou a
+usar uma tabela de cenários (`SCENES`), então novos locais entram sem mexer no resto. Também: ambiente próprio em
+`environment.js`, 4 zumbis em `roster.js`, colisão na fachada do prédio (antes dava para atravessá-lo) e música
+silenciada dentro do hospital (`audio.js`). Interior procedural, sem assets novos.
+
 ## Verificação feita (Chromium sem GPU)
 - Build e lint limpos; nenhum módulo órfão.
 - Teste de jogabilidade em CPU (andar, mirar, atirar, recarregar, trocar de cena, zumbis): resultados numéricos
   idênticos aos do projeto original.
 - Delegacia: mesmas contagens do original. Rua: sem erros; hashes de chuva e fogo idênticos ao original.
+- Hospital: vistas de todas as salas em qualidade baixa e média; teste funcional rua → hospital → rua, colisões nas
+  paredes e vãos, loot e zumbis; saguão e rua seguem com resultados idênticos aos de antes.
 - Tempestade vista em qualidade baixa e média; trovão medido no mixer (rua ~4× a energia do ambiente).
 
 ## Não verificado

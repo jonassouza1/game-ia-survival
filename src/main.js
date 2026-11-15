@@ -8,6 +8,7 @@ import { createAudio } from './systems/audio.js';
 import { createInventory } from './systems/inventory.js';
 import { CollisionWorld } from './systems/collision.js';
 import { createEnemies } from './enemies/zombieManager.js';
+import { buildHospital } from './world/hospital.js';
 import { initPBR } from './render/pbr.js';
 import { createEnvironment } from './render/environment.js';
 import { createStorm } from './render/storm.js';
@@ -32,15 +33,20 @@ initPBR(renderer);
 
 const hallGroup = new THREE.Group();
 const streetGroup = new THREE.Group();
+const hospitalGroup = new THREE.Group();
 hallGroup.name = 'RPDMainHall';
 streetGroup.name = 'RaccoonCityStreet';
-scene.add(hallGroup, streetGroup);
+hospitalGroup.name = 'AbandonedHospital';
+scene.add(hallGroup, streetGroup, hospitalGroup);
 const hallWorld = buildPoliceStation(hallGroup);
 const streetWorld = buildCityStreet(streetGroup);
+const hospitalWorld = buildHospital(hospitalGroup);
 configureGroupShadows(hallGroup, quality);
 configureGroupShadows(streetGroup, quality);
+configureGroupShadows(hospitalGroup, quality);
 hallGroup.visible = true;
 streetGroup.visible = false;
+hospitalGroup.visible = false;
 // O jogador mantém um CollisionWorld próprio. Antes, a troca de cena
 // sobrescrevia os arrays do saguão com os da rua, e ao voltar a delegacia
 // herdava as colisões erradas. Agora só copiamos de/para este objeto ativo.
@@ -82,32 +88,47 @@ const sceneFade = document.createElement('div');
 sceneFade.id = 'scene-fade';
 container.append(sceneFade);
 let sceneTransitionPending = false;
+// Cada cenário: mundo (colisão, props, update), grupo 3D, rótulo, neblina e aviso ao entrar.
+const SCENES = {
+  hall: {
+    world: hallWorld, group: hallGroup, fog: [0x14120d, 0.012],
+    label: 'RACCOON POLICE DEPARTMENT · SAGUÃO PRINCIPAL',
+    toast: 'Você voltou ao saguão principal do R.P.D.',
+  },
+  street: {
+    world: streetWorld, group: streetGroup, fog: [0x0d1114, 0.008],
+    label: 'RACCOON CITY · RUA EM CHAMAS',
+    toast: 'Você chegou à rua. A porta do R.P.D. permanece aberta.',
+  },
+  hospital: {
+    world: hospitalWorld, group: hospitalGroup, fog: [0x070a09, 0.02],
+    label: 'RACCOON CITY · HOSPITAL ABANDONADO',
+    toast: 'O ar é pesado. O hospital foi evacuado às pressas — e ninguém voltou.',
+  },
+};
 function switchScene(destination, spawn) {
-  if (activeLocation === destination || sceneTransitionPending) return;
+  if (activeLocation === destination || sceneTransitionPending || !SCENES[destination]) return;
   sceneTransitionPending = true;
   sceneFade.classList.add('active');
   window.setTimeout(() => {
-    const nextWorld = destination === 'street' ? streetWorld : hallWorld;
-    hallWorld.resetEntrance();
-    streetWorld.resetEntrance();
+    const target = SCENES[destination];
+    const nextWorld = target.world;
+    for (const entry of Object.values(SCENES)) {
+      entry.world.resetEntrance();
+      entry.group.visible = entry === target;
+    }
     activeLocation = destination;
-    hallGroup.visible = destination === 'hall';
-    streetGroup.visible = destination === 'street';
     copyCollisions(world.collisions, nextWorld.collisions);    world.occluders = nextWorld.occluders;
     world.update = nextWorld.update;
     world.props = nextWorld.props;
     player.teleport(spawn || nextWorld.spawn);
     interaction.setItems(nextWorld.props);
-    locationLabel.textContent = destination === 'street'
-      ? 'RACCOON CITY · RUA EM CHAMAS'
-      : 'RACCOON POLICE DEPARTMENT · SAGUÃO PRINCIPAL';
-    scene.fog.color.set(destination === 'street' ? 0x0d1114 : 0x14120d);
-    scene.fog.density = destination === 'street' ? 0.008 : 0.012;
+    locationLabel.textContent = target.label;
+    scene.fog.color.set(target.fog[0]);
+    scene.fog.density = target.fog[1];
     environment.apply(destination);
     audio.setEnvironment(destination);
-    interaction.toast(destination === 'street'
-      ? 'Você chegou à rua. A porta do R.P.D. permanece aberta.'
-      : 'Você voltou ao saguão principal do R.P.D.');
+    interaction.toast(target.toast);
     requestAnimationFrame(() => {
       sceneFade.classList.remove('active');
       sceneTransitionPending = false;
@@ -175,6 +196,7 @@ const enemies = createEnemies({
   locations: {
     hall: { group: hallGroup, collisions: hallWorld.collisions },
     street: { group: streetGroup, collisions: streetWorld.collisions },
+    hospital: { group: hospitalGroup, collisions: hospitalWorld.collisions },
   },
   getPlayer: () => player,
   getActiveCollisions: () => activeCollisions,
@@ -247,7 +269,7 @@ window.addEventListener('resize', () => {
 // Gancho de depuração (console: __rpd.player.state)
 window.__rpd = {
   THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality, storm,
-  activeCollisions, hallWorld, streetWorld, enemies, health, damagePlayer,
+  activeCollisions, hallWorld, streetWorld, hospitalWorld, enemies, health, damagePlayer,
   step: (dt = 1 / 60) => frame(dt),
 };
 

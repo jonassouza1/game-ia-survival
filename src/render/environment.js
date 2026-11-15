@@ -14,6 +14,14 @@ const LOCATIONS = {
     background: null,
     backgroundColor: 0x050604,
   },
+  // Hospital abandonado: quase só luz dinâmica (fluorescentes falhando, emergência vermelha) e a lanterna.
+  hospital: {
+    environment: 'abandoned_hall_01',
+    intensity: 0.17,
+    flashEnv: 0.04,
+    background: null,
+    backgroundColor: 0x020303,
+  },
   street: {
     environment: 'cobblestone_street_night',
     intensity: 0.26,

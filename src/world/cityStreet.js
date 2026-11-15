@@ -161,6 +161,10 @@ export function buildCityStreet(group) {
   let streetDoorTarget = 0;
   let pendingDoorTransition = null;
   let streetDoorItem = null;
+  let hospitalDoorTarget = 0;
+  let pendingHospitalTransition = null;
+  let hospitalDoorItem = null;
+  const hospitalDoorLeaves = [];
   const loadStreetModel = (asset, { height, position, rotationY = 0, tint = 1 }, onLoad = () => {}) => {
     modelLoader.load(asset, ({ scene: model }) => {
       model.rotation.y = rotationY;
@@ -927,6 +931,53 @@ export function buildCityStreet(group) {
   };
   props.push(streetDoorItem);
 
+  // Entrada do hospital, no fim da rua: portas duplas apodrecidas, com tábuas arrancadas.
+  // O prédio (modelo GLB) não tinha colisão: sem isto o jogador atravessava a fachada.
+  collisions.addBox(0, 73.5, 20.6, 12.6, { y0: 0, y1: 17 });
+  {
+    const doorWood = solid({ color: 0x3b362d, roughness: 0.95, tile: 2 });
+    const doorPlank = solid({ color: 0x5b4a35, roughness: 1, tile: 2 });
+    const doorGlass = solid({ color: 0x1a2227, roughness: 0.15, metalness: 0.2, tile: 2 });
+    const doorBlood = solid({ color: 0x3a0907, roughness: 0.4, tile: 2 });
+    for (const side of [-1, 1]) {
+      const hinge = new THREE.Group();
+      hinge.position.set(side * 0.98, 0, 67.0);
+      const part = (w, hh, d, material, x, y, z, rz = 0) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), material);
+        mesh.position.set(x, y, z); mesh.rotation.z = rz;
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        hinge.add(mesh);
+        return mesh;
+      };
+      part(0.96, 2.5, 0.1, doorWood, -side * 0.48, 1.27, 0);
+      part(0.5, 0.8, 0.04, doorGlass, -side * 0.48, 1.7, 0.06);
+      part(0.1, 2.5, 0.14, doorWood, -side * 0.93, 1.27, 0);
+      part(1.1, 0.14, 0.05, doorPlank, -side * 0.45, 0.9 + (side > 0 ? 0.35 : 0), 0.09, side * 0.18);
+      part(0.9, 0.14, 0.05, doorPlank, -side * 0.5, 1.55, 0.09, -side * 0.3);
+      part(0.04, 0.5, 0.012, doorBlood, -side * 0.3, 1.15, 0.1);
+      hospitalDoorLeaves.push({ hinge, side });
+      group.add(hinge);
+    }
+    hospitalDoorItem = {
+      id: 'street-hospital-door', pos: new THREE.Vector3(0, 0, 66.2), y: 0,
+      radius: 2.6, label: 'Entrar no hospital',
+      onUse: (context) => {
+        if (hospitalDoorTarget > 0.95) {
+          context.transition('hospital');
+          return;
+        }
+        hospitalDoorTarget = 1;
+        hospitalDoorItem.label = 'Atravessar a porta';
+        pendingHospitalTransition = {
+          seconds: 0.9,
+          transition: () => context.transition('hospital'),
+        };
+        context.toast('As portas do hospital cedem, rangendo. Lá dentro, só escuridão.');
+      },
+    };
+    props.push(hospitalDoorItem);
+  }
+
   // Props escaneados (CC0) dão escala e imperfeição à calçada: telefone
   // público, hidrante, lata de lixo, banco, barril e caixotes.
   const streetProps = createProps({ parent: group, collisions, anisotropy: 8 });
@@ -1149,6 +1200,18 @@ export function buildCityStreet(group) {
         const target = streetDoorTarget * side * 1.3;
         hinge.rotation.y += (target - hinge.rotation.y) * Math.min(1, dt * 4.5);
       }
+      for (const { hinge, side } of hospitalDoorLeaves) {
+        const target = hospitalDoorTarget * side * 1.3;
+        hinge.rotation.y += (target - hinge.rotation.y) * Math.min(1, dt * 4.5);
+      }
+      if (pendingHospitalTransition) {
+        pendingHospitalTransition.seconds -= dt;
+        if (pendingHospitalTransition.seconds <= 0) {
+          const transition = pendingHospitalTransition.transition;
+          pendingHospitalTransition = null;
+          transition();
+        }
+      }
       if (pendingDoorTransition) {
         pendingDoorTransition.seconds -= dt;
         if (pendingDoorTransition.seconds <= 0) {
@@ -1213,6 +1276,9 @@ export function buildCityStreet(group) {
     resetEntrance() {
       streetDoorTarget = 0;
       pendingDoorTransition = null;
+      hospitalDoorTarget = 0;
+      pendingHospitalTransition = null;
+      if (hospitalDoorItem) hospitalDoorItem.label = 'Entrar no hospital';
       if (streetDoorItem) streetDoorItem.label = 'Entrar na delegacia';
     },
     spawn: { x: 0, y: 0, z: 2, yaw: 0 },

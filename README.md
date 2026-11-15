@@ -109,6 +109,7 @@ src/
     builder.js            merge de geometria, UV de mundo, vertex AO
     policeStation.js      saguão da R.P.D.
     cityStreet.js         rua de Raccoon City
+    hospital.js            hospital abandonado (interior procedural, estilo The Last of Us)
     textures.js           desenhos gráficos (vitral, medalhão, brasão)
     props.js              loader/clone/colisão dos props CC0
   player/player.js        personagem SWAT/Mixamo, IK de mira, câmera e lanternas
@@ -126,6 +127,20 @@ tools/
   modelos de prédio; o foco do realismo ficou no saguão e nos props.
 - O céu noturno é um HDRI 1k escurecido, coberto por uma cúpula de nuvens em
   shader (`storm.js`); em telas muito grandes pode faltar resolução nas estrelas.
+
+## Hospital abandonado
+
+Fica no fim da rua: as portas duplas da fachada (z ≈ 67) levam ao interior, em `src/world/hospital.js`, que segue o
+mesmo contrato do saguão do RPD (`collisions`, `occluders`, `props`, `update`, `resetEntrance`, `spawn`). Planta: saguão e
+recepção, corredor central, enfermaria (oeste), cirurgia (leste), necrotério (noroeste), UTI (nordeste) e uma saída de
+emergência acorrentada. Há 4 zumbis parados no escuro (`roster.js`, local `hospital`), 2 pacotes de munição e 8 itens
+examináveis. A música é cortada ali; só chuva e vento distantes.
+
+Não há assets externos de hospital: macas, leitos, soro, cadeiras de rodas, corpos, sangue, escombros e placas são
+geometria procedural (fundida pelo `Builder` em poucos draw calls) com as texturas PBR e os props que o projeto já tem.
+Para trocar por modelos prontos (GLB), carregue-os com `createProps` e posicione no lugar das peças procedurais.
+Para adicionar outro cenário, siga o mesmo caminho: um arquivo `src/world/<nome>.js`, uma entrada em `SCENES`
+(`main.js`), em `LOCATIONS` (`environment.js` e `roster.js`) e uma porta de acesso no mundo de origem.
 
 ## Tempestade (rua)
 
