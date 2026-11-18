@@ -28,6 +28,22 @@ usar uma tabela de cenários (`SCENES`), então novos locais entram sem mexer no
 `environment.js`, 4 zumbis em `roster.js`, colisão na fachada do prédio (antes dava para atravessá-lo) e música
 silenciada dentro do hospital (`audio.js`). Interior procedural, sem assets novos.
 
+## Assets opcionais do hospital e nova fachada
+- Cada peça procedural do hospital passou a ter um "encaixe" de GLB (`public/models/hospital/manifest.json`): com arquivo,
+  usa o modelo; sem arquivo, o visual é o mesmo de antes (conferido: mesmas contagens de draw calls/triângulos e
+  imagens equivalentes).
+- O prédio genérico (`large_building_a.glb`, o mesmo das outras fachadas) saiu do fim da rua. No lugar entrou uma fachada
+  procedural de hospital abandonado (`hospitalExterior.js`), com encaixe `exterior` para um GLB. A porta e a colisão
+  acompanham a nova parede (z = 67,7).
+- `main.js` usa `await` no nível do módulo para checar os assets; `vite.config.js` ganhou `build.target = 'esnext'`.
+- Os assets da Fab/Quixel NÃO estão incluídos (pagos/exigem login e licença).
+
+## Assets reais do hospital (pacotes do autor)
+Convertidos de FBX/GLB e otimizados (9,7 MB no total em `public/models/hospital/`): prédio Jejungwon com tratamento
+apocalíptico (tábuas, vidro quebrado, sujeira, placa "RACCOON HOSPITAL"), porta dupla em duas folhas, leito, maca com corpo,
+carrinhos, soro, armários, divisórias de cama, abajur e cadeira. Interior: os móveis procedurais trocados por modelos e
+alguns móveis extras nas paredes; planta, luz e clima escuro mantidos. Licenças: ver `CREDITS.txt` (confirmar na fonte).
+
 ## Verificação feita (Chromium sem GPU)
 - Build e lint limpos; nenhum módulo órfão.
 - Teste de jogabilidade em CPU (andar, mirar, atirar, recarregar, trocar de cena, zumbis): resultados numéricos

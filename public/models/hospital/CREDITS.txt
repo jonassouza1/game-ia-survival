@@ -1,0 +1,28 @@
+ASSETS DO HOSPITAL — ORIGEM E TRATAMENTO
+=========================================
+
+Fornecidos pelo autor do projeto (pacotes .zip/.glb, sem arquivo de licença incluído).
+>>> CONFIRME A LICENÇA E A ATRIBUIÇÃO DE CADA PACOTE NA FONTE ORIGINAL ANTES DE PUBLICAR O JOGO. <<<
+Os GLB desta pasta ficam acessíveis a quem abrir o site.
+
+Pacote original                              Usado em
+-------------------------------------------  ---------------------------------------------------------
+hospital-bed                                 bed.glb (leito de ferro enferrujado)
+hospital-stretcher                           gurney_covered.glb (maca com corpo coberto por lençol)
+hospital-trolley                             cart.glb (carrinho de aço)
+hospital_asset_iv_drip_and_iv-pole.glb       iv.glb (suporte de soro)
+medical-props                                cart_surgical.glb (carrinho cirúrgico)
+hospital-door                                door_leaf_l.glb / door_leaf_r.glb (porta dupla, em duas folhas)
+jejungwon-hospital                           building.glb + building.json (prédio do hospital, fim da rua)
+the-hospital-4-of-4 (MemoryZone04)           gurney.glb, iv2.glb, tall_cabinet.glb, chair.glb, screen.glb,
+                                             cabinet.glb, med_cabinet.glb, lamp.glb (peças extraídas da cena)
+
+Tratamento aplicado (feito para este projeto)
+---------------------------------------------
+- Conversão FBX -> GLB; texturas redimensionadas (1K, prédio 2K) e comprimidas em WebP; malhas simplificadas (soro, carrinhos).
+- Leito, porta, maca, props: texturas reatribuídas (albedo/normal/ORM) conforme os arquivos de cada pacote.
+- Porta: o objeto único foi separado em duas folhas independentes, com a dobradiça na origem.
+- Prédio: texturas repintadas (sujeira, escorridos, vidro escuro e rachado, musgo); a placa em coreano
+  ("광주제중병원") foi substituída por "RACCOON HOSPITAL"; 49 janelas receberam tábuas (geometria gravada no GLB);
+  a planta de colisão foi calculada a partir da geometria (building.json).
+- Cena MemoryZone04: apenas as peças listadas acima foram extraídas (a estrutura/arquitetura da cena não é usada).

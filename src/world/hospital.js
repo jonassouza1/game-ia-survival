@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Builder } from './builder.js';
 import { createProps } from './props.js';
 import { LightPool } from '../render/lightPool.js';
@@ -21,9 +22,9 @@ import { CollisionWorld } from '../systems/collision.js';
  */
 const HOSP = { x0: -11, x1: 11, z0: -26, z1: 20, h: 3.8 };
 // Ao sair, o jogador volta à rua diante do prédio, olhando para longe dele (-z).
-const HOSPITAL_STREET_RETURN = { x: 0, y: 0, z: 64.6, yaw: Math.PI };
+const HOSPITAL_STREET_RETURN = { x: 0, y: 0, z: 63.0, yaw: Math.PI };
 
-export function buildHospital(scene) {
+export function buildHospital(scene, assets = {}) {
   const { x0, x1, z0, z1, h } = HOSP;
   const WT = 0.3;                                   // espessura das paredes
 
@@ -133,6 +134,14 @@ export function buildHospital(scene) {
   const props = [];
   const decor = createProps({ parent: scene, collisions: col, anisotropy: 8 });
   const pool = new LightPool(scene, { count: 8, distance: 12, decay: 2 });
+  // Encaixe de asset: se houver arquivo para a peça (ver hospitalAssets.js), usa o modelo no lugar da peça
+  // procedural e devolve true. As colisões continuam sendo registradas pelas próprias funções de peça.
+  const asset = (slot, x, y, z, ry = 0) => {
+    const a = assets[slot];
+    if (!a) return false;
+    decor.place(a.url, { position: [x, y + a.yOffset, z], height: a.height, rotationY: ry + a.rotationY, tint: a.tint, name: slot });
+    return true;
+  };
   const D0 = { cam: false };               // decoração: a câmera ignora
   const DN = { cam: false, cast: false };  // sem sombra nem colisão de câmera
   const box = (...a) => b.box(...a);
@@ -197,8 +206,9 @@ export function buildHospital(scene) {
   };
 
   function corpse(x, z, ry, { cloth = M.scrubs, y0 = 0, sitting = false, bleed = true } = {}) {
-    b.push(x, y0, z, ry);
-    if (!sitting) {
+    const placed = !sitting && asset('corpse', x, y0, z, ry);
+    if (!placed) b.push(x, y0, z, ry);
+    if (placed) { /* modelo no lugar */ } else if (!sitting) {
       box(0.46, 0.2, 0.62, cloth, 0, 0.12, 0, D0);
       box(0.42, 0.18, 0.3, cloth, 0, 0.11, 0.44, D0);
       b.sph(0.12, M.skin, 0, 0.14, -0.44, D0, 7, 5);
@@ -216,11 +226,12 @@ export function buildHospital(scene) {
         b.cyl(0.05, 0.045, 0.5, cloth, s * 0.27, 0.45, 0.14, 6, { rx: 0.9, ...D0 });
       }
     }
-    b.pop();
+    if (!placed) b.pop();
     if (bleed && y0 === 0) bloodPool(x, z, 0.55);
   }
   // Corpo coberto por lençol (o clássico "evacuaram e deixaram para trás")
   function coveredBody(x, z, ry, y0, { stain = true } = {}) {
+    if (asset('coveredBody', x, y0, z, ry)) return;
     b.push(x, y0, z, ry);
     const g = new THREE.SphereGeometry(1, 8, 6); g.scale(0.27, 0.15, 0.95);
     b.geo(g, M.sheet, 0, 0.12, 0, D0);
@@ -230,7 +241,9 @@ export function buildHospital(scene) {
     b.pop();
   }
   function bed(x, z, ry, { body = null, broken = false, blood = true } = {}) {
-    b.push(x, 0, z, ry);
+    const placed = asset('bed', x, 0, z, ry);
+    if (!placed) b.push(x, 0, z, ry);
+    if (!placed) {
     box(0.95, 0.07, 2.0, M.metal, 0, 0.55, 0, D0);
     box(0.88, 0.16, 1.92, M.mattress, 0, 0.68, 0, D0);
     box(0.5, 0.1, 0.32, M.sheetOld, 0, 0.8, -0.7, D0);
@@ -244,13 +257,17 @@ export function buildHospital(scene) {
     box(0.04, 0.25, 1.4, M.chrome, -0.47, 0.88, 0.05, D0);
     if (!broken) box(0.04, 0.25, 1.4, M.chrome, 0.47, 0.88, 0.05, D0);
     if (blood) box(0.5, 0.012, 0.7, M.blood, 0.05, 0.765, 0.2, { ry: 0.3, ...DN });
-    if (body === 'covered') coveredBody(0, 0, 0, 0.78);
-    b.pop();
+    }
+    if (!placed) b.pop();
+    if (body === 'covered') coveredBody(x, z, ry, 0.78);
     if (body === 'dead') corpse(x, z, ry, { cloth: M.gown, y0: 0.78, bleed: false });
     col.addBox(x, z, Math.abs(Math.cos(ry)) * 0.95 + Math.abs(Math.sin(ry)) * 2.05, Math.abs(Math.cos(ry)) * 2.05 + Math.abs(Math.sin(ry)) * 0.95, { y0: 0, y1: 0.95 });
   }
   function gurney(x, z, ry, { covered = true } = {}) {
-    b.push(x, 0, z, ry);
+    const coveredAsset = covered && asset('gurneyCovered', x, 0, z, ry);      // maca com o corpo sob o lençol
+    const placed = coveredAsset || asset('gurney', x, 0, z, ry);
+    if (!placed) b.push(x, 0, z, ry);
+    if (!placed) {
     box(0.7, 0.06, 1.9, M.chrome, 0, 0.82, 0, D0);
     box(0.64, 0.1, 1.84, M.mattress, 0, 0.9, 0, D0);
     box(0.5, 0.05, 1.5, M.metal, 0, 0.45, 0, D0);
@@ -258,10 +275,12 @@ export function buildHospital(scene) {
       b.cyl(0.025, 0.025, 0.8, M.chrome, sx * 0.28, 0.42, sz * 0.8, 5, D0);
       b.cyl(0.07, 0.07, 0.05, M.dark, sx * 0.28, 0.07, sz * 0.8, 8, { rx: Math.PI / 2, ...D0 });
     }
-    if (covered) coveredBody(0, 0, 0, 0.95);
-    b.pop();
+    }
+    if (!placed) b.pop();
+    if (covered && !coveredAsset) coveredBody(x, z, ry, 0.95);
     col.addBox(x, z, Math.abs(Math.cos(ry)) * 0.75 + Math.abs(Math.sin(ry)) * 1.95, Math.abs(Math.cos(ry)) * 1.95 + Math.abs(Math.sin(ry)) * 0.75, { y0: 0, y1: 1.0 });
   }
+  let ivCount = 0;
   function ivStand(x, z, { fallen = false } = {}) {
     if (fallen) {
       b.push(x, 0, z, rnd() * 6);
@@ -271,7 +290,10 @@ export function buildHospital(scene) {
       b.pop();
       return;
     }
-    b.push(x, 0, z, rnd() * 6);
+    const turn = rnd() * 6;
+    const order = ivCount++ % 2 ? ['ivStand2', 'ivStand'] : ['ivStand', 'ivStand2'];
+    if (asset(order[0], x, 0, z, turn) || asset(order[1], x, 0, z, turn)) return;
+    b.push(x, 0, z, turn);
     b.cyl(0.015, 0.015, 1.85, M.chrome, 0, 0.92, 0, 5, D0);
     for (let i = 0; i < 5; i++) box(0.34, 0.025, 0.035, M.chrome, 0, 0.03, 0, { ry: i * 1.256, ...D0 });
     box(0.2, 0.014, 0.014, M.chrome, 0.08, 1.84, 0, D0);
@@ -279,7 +301,9 @@ export function buildHospital(scene) {
     b.pop();
   }
   function wheelchair(x, z, ry) {
-    b.push(x, 0, z, ry);
+    const placed = asset('wheelchair', x, 0, z, ry);
+    if (!placed) b.push(x, 0, z, ry);
+    if (!placed) {
     box(0.44, 0.06, 0.44, M.dark, 0, 0.48, 0, D0);
     box(0.44, 0.5, 0.05, M.dark, 0, 0.74, -0.2, D0);
     for (const s of [-1, 1]) {
@@ -287,10 +311,12 @@ export function buildHospital(scene) {
       b.cyl(0.08, 0.08, 0.03, M.dark, s * 0.24, 0.08, 0.32, 8, { rz: Math.PI / 2, ...D0 });
       box(0.04, 0.04, 0.4, M.chrome, s * 0.22, 0.62, 0, D0);
     }
-    b.pop();
+    }
+    if (!placed) b.pop();
     col.addBox(x, z, 0.75, 0.75, { y0: 0, y1: 0.9 });
   }
-  function cart(x, z, ry, { fallen = false } = {}) {
+  function cart(x, z, ry, { fallen = false, surgical = false } = {}) {
+    if (!fallen && ((surgical && asset('cartSurgical', x, 0, z, ry)) || asset('cart', x, 0, z, ry))) { col.addBox(x, z, 0.85, 0.85, { y0: 0, y1: 1.0 }); return; }
     b.push(x, 0, z, ry);
     if (fallen) {
       box(0.8, 0.5, 0.5, M.metal, 0, 0.25, 0, { rz: 1.4, ry: 0.4, ...D0 });
@@ -305,6 +331,7 @@ export function buildHospital(scene) {
     col.addBox(x, z, 0.85, 0.85, { y0: 0, y1: 1.0 });
   }
   function chair(x, z, ry, fallen) {
+    if (!fallen && asset('chair', x, 0, z, ry)) { col.addBox(x, z, 0.5, 0.5, { y0: 0, y1: 0.9 }); return; }
     b.push(x, 0, z, ry);
     if (fallen) {
       box(0.45, 0.05, 0.45, M.seat, 0, 0.23, 0, { rz: Math.PI / 2, rx: 0.1, ...D0 });
@@ -319,6 +346,10 @@ export function buildHospital(scene) {
     if (!fallen) col.addBox(x, z, 0.5, 0.5, { y0: 0, y1: 0.9 });
   }
   function shelf(x, z, ry, { fallen = false } = {}) {
+    if (!fallen && asset('shelf', x, 0, z, ry)) {
+      col.addBox(x, z, Math.abs(Math.cos(ry)) * 1.2 + Math.abs(Math.sin(ry)) * 0.5, Math.abs(Math.cos(ry)) * 0.5 + Math.abs(Math.sin(ry)) * 1.2, { y0: 0, y1: 2.0 });
+      return;
+    }
     b.push(x, 0, z, ry);
     if (fallen) {
       box(1.2, 0.4, 2.0, M.metal, 0, 0.2, 0, { rz: 0.12, ...D0 });
@@ -449,11 +480,16 @@ export function buildHospital(scene) {
   ivStand(-8.5, 2.0); ivStand(-8.4, -4.4, { fallen: true }); ivStand(-8.5, -1.8);
   cart(-5.4, 1.0, 1.2); cart(-4.4, -3.0, 0.4, { fallen: true });
   // Cortinas rasgadas separando os leitos
-  for (const cz of [1.9, -1.8]) for (let i = 0; i < 5; i++) {
+  const useScreens = Boolean(assets.screen);
+  if (useScreens) {                                       // divisórias de cama no lugar das tiras de cortina
+    asset('screen', -8.6, 0, 1.9, Math.PI / 2); asset('screen', -8.55, 0, -1.8, Math.PI / 2 + 0.12);
+    asset('screen', -6.4, 0, -6.9, 0.35);
+  }
+  if (!useScreens) for (const cz of [1.9, -1.8]) for (let i = 0; i < 5; i++) {
     const len = between(1.7, 2.9);                         // tiras rasgadas penduradas do trilho, não chegam ao chão
     box(0.03, len, 0.3, M.curtain, -8.6, h - len / 2, cz + (i - 2) * 0.32, { rz: between(-0.06, 0.06), rx: between(-0.05, 0.05), ...DN });
   }
-  box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, 1.9, DN); box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, -1.8, DN);
+  if (!useScreens) { box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, 1.9, DN); box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, -1.8, DN); }
   corpse(-5.0, -0.6, 2.2, { cloth: M.scrubs }); corpse(-3.3, 2.5, 0.2, { cloth: M.gown, sitting: true });
   papers(-6, 0, 22, 3); rubble(-6.5, 3.8, 12, 1.5); ceilingHole(-6.8, 3.8, 2.4, 2.0);
   decal(-6.2, -3.4, 2.0, 1.6, M.water, 0.6); decal(-7, 0.5, 5.5, 8, M.dirt, 0.3);
@@ -463,22 +499,24 @@ export function buildHospital(scene) {
 
   // ───────────────────────── Cirurgia (leste) ─────────────────────────
   // Mesa de operação sob o foco cirúrgico caído
-  b.push(7, 0, -2, 0.1);
-  box(0.85, 0.12, 2.0, M.chrome, 0, 0.9, 0, D0); b.cyl(0.12, 0.2, 0.9, M.chrome, 0, 0.45, 0, 8, D0); box(0.7, 0.05, 0.7, M.dark, 0, 0.03, 0, D0);
-  coveredBody(0, 0, 0, 0.98, { stain: true });
-  b.pop();
+  if (!asset('operatingTable', 7, 0, -2, 0.1)) {
+    b.push(7, 0, -2, 0.1);
+    box(0.85, 0.12, 2.0, M.chrome, 0, 0.9, 0, D0); b.cyl(0.12, 0.2, 0.9, M.chrome, 0, 0.45, 0, 8, D0); box(0.7, 0.05, 0.7, M.dark, 0, 0.03, 0, D0);
+    b.pop();
+  }
+  coveredBody(7, -2, 0.1, 0.98, { stain: true });
   col.addBox(7, -2, 1.0, 2.1, { y0: 0, y1: 1.0 });
   b.cyl(0.55, 0.55, 0.08, M.chrome, 7.4, 2.0, -1.4, 12, { rx: 0.35, rz: 0.25, ...D0 });          // foco soltando do teto
   b.cyl(0.03, 0.03, 1.7, M.chrome, 7.1, 2.9, -1.6, 5, { rx: 0.2, rz: 0.15, ...DN });
   for (let i = 0; i < 4; i++) box(0.3, 0.02, 0.16, M.chrome, 5.6 + i * 0.1, 0.96 + i * 0.01, 1.2 - i * 0.05, { ry: 0.3 * i, ...DN });   // instrumentos
   box(1.0, 0.8, 0.5, M.metal, 5.4, 0.45, 1.3, D0); col.addBox(5.4, 1.3, 1.1, 0.6, { y0: 0, y1: 0.9 });
-  shelf(10.4, -6.5, Math.PI / 2); shelf(10.4, 3.3, Math.PI / 2, { fallen: true });
+  shelf(10.4, -6.5, -Math.PI / 2); shelf(10.4, 3.3, Math.PI / 2, { fallen: true });
   box(0.3, 1.2, 1.4, M.metal, 10.7, 1.3, -2.2, D0);                                               // pia
   col.addBox(10.7, -2.2, 0.5, 1.5, { y0: 0, y1: 1.0 }); box(0.04, 0.5, 0.7, M.shard, 10.52, 2.1, -2.2, DN);
   box(0.04, 0.9, 1.1, M.slit, 10.84, 1.9, 0.6, DN);                                                 // negatoscópio
   bloodPool(7, -2, 0.8); papers(7, 0, 24, 3); rubble(4.2, -7.5, 14, 1.4); ceilingHole(8.5, 2.5, 2.2, 1.8);
   corpse(8.8, -5.4, 0.5, { cloth: M.coat }); corpse(4.4, 3.6, 1.9, { cloth: M.scrubs, sitting: true });
-  cart(9.2, 0.4, 0.2, { fallen: true }); cart(4.3, -3.2, 0.9); ivStand(5.2, -0.4, { fallen: true });
+  cart(9.2, 0.4, 0.2, { fallen: true }); cart(4.3, -3.2, 0.9, { surgical: true }); ivStand(5.2, -0.4, { fallen: true });
   decal(6.5, 3.8, 2.4, 1.6, M.water, 0.5); decal(7, -1, 6, 8, M.dirt, 0.6);
   boardedWindow(x1, 4.2, 1); boardedWindow(x1, -4.5, 1);
 
@@ -492,7 +530,7 @@ export function buildHospital(scene) {
   }
   col.addBox(x0 + 1.3, -21.8, 1.9, 4.6, { y0: 0, y1: 2.2 });
   for (const mz of [-14, -17.5]) {
-    box(1.0, 0.1, 2.1, M.chrome, -6.0, 0.88, mz, D0); b.cyl(0.08, 0.08, 0.85, M.chrome, -6.0, 0.43, mz, 6, D0);
+    if (!asset('morgueTable', -6.0, 0, mz, 0)) { box(1.0, 0.1, 2.1, M.chrome, -6.0, 0.88, mz, D0); b.cyl(0.08, 0.08, 0.85, M.chrome, -6.0, 0.43, mz, 6, D0); }
     col.addBox(-6, mz, 1.0, 2.1, { y0: 0, y1: 1.0 });
   }
   coveredBody(-6.0, -14, 0, 0.96); coveredBody(-6.0, -17.5, 0, 0.96, { stain: false });
@@ -523,9 +561,27 @@ export function buildHospital(scene) {
   // ───────────────────────── Porta de entrada (volta à rua) ─────────────────────────
   const entranceDoor = { target: 0, leaves: [] };
   const leafMeshes = [];
+  let occluderList = null;
+  const doorLoader = new GLTFLoader();
   for (const side of [-1, 1]) {
     const hinge = new THREE.Group();
     hinge.position.set(side * 1.2, 0, z1);
+    const leafAsset = side < 0 ? assets.doorLeafL : assets.doorLeafR;
+    if (leafAsset) {                                       // folha do pacote (dobradiça na origem do modelo)
+      doorLoader.load(leafAsset.url, ({ scene: leaf }) => {
+        leaf.scale.set(1.2 / 0.978, 2.55 / 2.328, 1.4);
+        leaf.traverse((object) => {
+          if (!object.isMesh) return;
+          object.castShadow = true; object.receiveShadow = true;
+          const copy = object.material.clone(); copy.color?.multiplyScalar(leafAsset.tint ?? 0.8); object.material = copy;
+          leafMeshes.push(object); if (occluderList) occluderList.push(object);
+        });
+        hinge.add(leaf);
+      }, undefined, (error) => console.error('Folha da porta do hospital:', error));
+      entranceDoor.leaves.push({ hinge, side });
+      scene.add(hinge);
+      continue;
+    }
     const leafMesh = (w, hh, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; hinge.add(m); return m; };
     leafMesh(1.2, 2.55, 0.1, M.wood, -side * 0.6, 1.3, 0);
     leafMesh(0.5, 0.9, 0.04, M.shard, -side * 0.6, 1.7, 0.06);           // vidro quebrado
@@ -581,6 +637,25 @@ export function buildHospital(scene) {
   decor.place('wooden_crate_01', { position: [9.8, 0, 3.4], height: 0.6, rotationY: 0.4, tint: 0.55, collider: { w: 0.7, d: 0.7, h: 0.6 } });
   decor.place('GreenChair_01', { position: [-8.2, 0, -11.6], height: 0.9, rotationY: 0.8, tint: 0.5 });
 
+  // ───────────────────────── Extras (só com assets do pacote) ─────────────────────────
+  // Móveis a mais, encostados nas paredes, que enriquecem as salas sem mudar a planta nem o caminho do jogador.
+  const extra = (slot, x, z, ry, w, d, y = 0, solidHeight = 1.0) => {
+    if (!asset(slot, x, y, z, ry)) return;
+    if (solidHeight > 0) col.addBox(x, z, w, d, { y0: 0, y1: solidHeight });
+  };
+  extra('cabinet', -10.5, 8.0, Math.PI / 2, 0.75, 0.75);               // saguão, parede oeste
+  extra('cabinet', -10.5, 9.0, Math.PI / 2, 0.75, 0.75);
+  extra('cabinet', 2.1, -4.5, -Math.PI / 2, 0.75, 0.75);               // corredor
+  extra('cabinet', -2.85, -6.2, -Math.PI / 2, 0.75, 0.75);             // enfermaria, parede do corredor
+  extra('cabinet', 10.5, -8.2, -Math.PI / 2, 0.75, 0.75);              // cirurgia
+  extra('cabinet', -3.0, -24.6, Math.PI, 0.75, 0.75);                  // necrotério
+  extra('medCabinet', 10.6, -4.6, -Math.PI / 2, 0.5, 1.3, 1.25, 0);    // armário de remédios na parede (cirurgia)
+  extra('medCabinet', 10.6, 6.9, -Math.PI / 2, 0.5, 1.3, 1.25, 0);     // idem, saguão leste
+  extra('medCabinet', -10.55, -6.5, Math.PI / 2, 0.5, 1.3, 1.25, 0);   // enfermaria
+  extra('lamp', -9.6, 11.0, 0, 0.45, 0.45);                            // abajures de chão
+  extra('lamp', -10.2, -0.9, 0, 0.45, 0.45);
+  extra('lamp', 8.4, -9.4, 0, 0.45, 0.45);
+
   // Colisão do perímetro (as paredes já registraram as suas; isto evita vazar nos cantos)
   col.addBox(0, z0 - 0.3, x1 - x0 + 2, 0.6);
   col.addBox(x0 - 0.3, -3, 0.6, z1 - z0 + 2);
@@ -590,6 +665,7 @@ export function buildHospital(scene) {
 
   const { occluders } = b.finish(scene);
   occluders.push(...leafMeshes);            // a câmera não pode atravessar a porta fechada
+  occluderList = occluders;                  // folhas carregadas depois entram na mesma lista
   const resetEntrance = () => {
     entranceDoor.target = 0;
     pendingTransition = null;

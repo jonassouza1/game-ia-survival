@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildHospitalFacade } from './hospitalExterior.js';
+import { placeHospitalBuilding } from './hospitalBuilding.js';
 import { CollisionWorld } from '../systems/collision.js';
 import { createProps } from './props.js';
 import { LightPool } from '../render/lightPool.js';
@@ -42,7 +44,9 @@ function worldUV(geometry, tile = 2) {
   uv.needsUpdate = true;
 }
 
-export function buildCityStreet(group) {
+export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor = null } = {}) {
+  // Prédio do pacote (com planta de colisão e entrada) ou, sem ele, a fachada procedural / um GLB simples.
+  const useHospitalBuilding = Boolean(hospitalExterior?.data);
   const rpdSign = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -441,9 +445,19 @@ export function buildCityStreet(group) {
     }
   }
 
-  loadStreetModel('/models/large_building_a/large_building_a.glb', {
-    height: 17, position: { x: 0, y: 0, z: 73.5 }, rotationY: Math.PI, tint: 0.52,
-  });
+  // Prédio do hospital, no fim da rua: o GLB do encaixe `exterior` (se houver) ou a fachada procedural.
+  if (useHospitalBuilding) {
+    // o prédio é posicionado mais adiante (precisa da colisão da rua), junto da porta
+  } else if (hospitalExterior) {
+    const [px, py, pz] = hospitalExterior.position ?? [0, 0, 73.5];
+    loadStreetModel(hospitalExterior.url, {
+      height: hospitalExterior.height, position: { x: px, y: py, z: pz },
+      rotationY: hospitalExterior.rotationY ?? Math.PI, tint: hospitalExterior.tint ?? 0.6,
+    });
+  } else {
+    buildHospitalFacade(group);
+  }
+  if (!useHospitalBuilding) {   // o prédio do pacote já traz a sua própria placa
   const hospitalSignCanvas = document.createElement('canvas');
   hospitalSignCanvas.width = 512;
   hospitalSignCanvas.height = 128;
@@ -469,6 +483,7 @@ export function buildCityStreet(group) {
   group.add(hospitalSign);
   box(0.16, 0.76, 0.12, materials.rust, 0, 11.6, 67.6);
   box(0.56, 0.16, 0.12, materials.rust, 0, 11.6, 67.6);
+  }
 
   // Cidade ao fundo (skyline/horizonte urbano) e estrelas ficavam sempre invisíveis e foram
   // removidos; o gerador pseudoaleatório avança o mesmo tanto para não alterar o que vem depois.
@@ -931,9 +946,37 @@ export function buildCityStreet(group) {
   };
   props.push(streetDoorItem);
 
-  // Entrada do hospital, no fim da rua: portas duplas apodrecidas, com tábuas arrancadas.
-  // O prédio (modelo GLB) não tinha colisão: sem isto o jogador atravessava a fachada.
-  collisions.addBox(0, 73.5, 20.6, 12.6, { y0: 0, y1: 17 });
+  // Entrada do hospital, no fim da rua. Abre as duas folhas e leva ao interior (mesmo mecanismo do R.P.D.).
+  const makeHospitalDoorItem = (pos, radius) => {
+    hospitalDoorItem = {
+      id: 'street-hospital-door', pos, y: 0, radius, label: 'Entrar no hospital',
+      onUse: (context) => {
+        if (hospitalDoorTarget > 0.95) {
+          context.transition('hospital');
+          return;
+        }
+        hospitalDoorTarget = 1;
+        hospitalDoorItem.label = 'Atravessar a porta';
+        pendingHospitalTransition = {
+          seconds: 0.9,
+          transition: () => context.transition('hospital'),
+        };
+        context.toast('As portas do hospital cedem, rangendo. Lá dentro, só escuridão.');
+      },
+    };
+    props.push(hospitalDoorItem);
+  };
+  if (useHospitalBuilding) {
+    // Prédio do pacote: planta de colisão real, pórtico livre e porta de duas folhas na entrada.
+    const building = placeHospitalBuilding({
+      group, loader: modelLoader, collisions, occluders, exterior: hospitalExterior, doorLeaves: hospitalDoor,
+    });
+    hospitalDoorLeaves.push(...building.leaves);
+    makeHospitalDoorItem(building.doorPosition, 2.8);
+  } else {
+    // Fachada procedural (ou GLB simples): portas apodrecidas, com tábuas arrancadas.
+    // O prédio (modelo GLB) não tinha colisão: sem isto o jogador atravessava a fachada.
+  collisions.addBox(0, 73.75, 20.6, 12.1, { y0: 0, y1: 17 });
   {
     const doorWood = solid({ color: 0x3b362d, roughness: 0.95, tile: 2 });
     const doorPlank = solid({ color: 0x5b4a35, roughness: 1, tile: 2 });
@@ -941,7 +984,7 @@ export function buildCityStreet(group) {
     const doorBlood = solid({ color: 0x3a0907, roughness: 0.4, tile: 2 });
     for (const side of [-1, 1]) {
       const hinge = new THREE.Group();
-      hinge.position.set(side * 0.98, 0, 67.0);
+      hinge.position.set(side * 0.98, 0, 67.55);
       const part = (w, hh, d, material, x, y, z, rz = 0) => {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), material);
         mesh.position.set(x, y, z); mesh.rotation.z = rz;
@@ -958,24 +1001,8 @@ export function buildCityStreet(group) {
       hospitalDoorLeaves.push({ hinge, side });
       group.add(hinge);
     }
-    hospitalDoorItem = {
-      id: 'street-hospital-door', pos: new THREE.Vector3(0, 0, 66.2), y: 0,
-      radius: 2.6, label: 'Entrar no hospital',
-      onUse: (context) => {
-        if (hospitalDoorTarget > 0.95) {
-          context.transition('hospital');
-          return;
-        }
-        hospitalDoorTarget = 1;
-        hospitalDoorItem.label = 'Atravessar a porta';
-        pendingHospitalTransition = {
-          seconds: 0.9,
-          transition: () => context.transition('hospital'),
-        };
-        context.toast('As portas do hospital cedem, rangendo. Lá dentro, só escuridão.');
-      },
-    };
-    props.push(hospitalDoorItem);
+    makeHospitalDoorItem(new THREE.Vector3(0, 0, 66.7), 2.6);
+  }
   }
 
   // Props escaneados (CC0) dão escala e imperfeição à calçada: telefone

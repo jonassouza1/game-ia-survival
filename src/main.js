@@ -9,6 +9,7 @@ import { createInventory } from './systems/inventory.js';
 import { CollisionWorld } from './systems/collision.js';
 import { createEnemies } from './enemies/zombieManager.js';
 import { buildHospital } from './world/hospital.js';
+import { loadHospitalAssets } from './world/hospitalAssets.js';
 import { initPBR } from './render/pbr.js';
 import { createEnvironment } from './render/environment.js';
 import { createStorm } from './render/storm.js';
@@ -39,8 +40,12 @@ streetGroup.name = 'RaccoonCityStreet';
 hospitalGroup.name = 'AbandonedHospital';
 scene.add(hallGroup, streetGroup, hospitalGroup);
 const hallWorld = buildPoliceStation(hallGroup);
-const streetWorld = buildCityStreet(streetGroup);
-const hospitalWorld = buildHospital(hospitalGroup);
+// Quais assets opcionais do hospital existem em /models/hospital/ (ver manifest.json). Sem arquivos: tudo procedural.
+const hospitalAssets = await loadHospitalAssets();
+const hospitalDoor = hospitalAssets.doorLeafL && hospitalAssets.doorLeafR
+  ? { left: hospitalAssets.doorLeafL, right: hospitalAssets.doorLeafR } : null;
+const streetWorld = buildCityStreet(streetGroup, { hospitalExterior: hospitalAssets.exterior ?? null, hospitalDoor });
+const hospitalWorld = buildHospital(hospitalGroup, hospitalAssets);
 configureGroupShadows(hallGroup, quality);
 configureGroupShadows(streetGroup, quality);
 configureGroupShadows(hospitalGroup, quality);

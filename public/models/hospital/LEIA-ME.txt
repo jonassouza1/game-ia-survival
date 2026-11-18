@@ -1,0 +1,43 @@
+ASSETS DO HOSPITAL (opcional)
+=============================
+
+Esta pasta é onde você coloca modelos prontos (GLB/GLTF) para substituir as peças que o hospital desenha por código
+(leitos, macas, soro, cadeira de rodas, carrinho, cadeira, estante, mesas, corpos) e a fachada do prédio.
+Sem arquivos aqui, o jogo usa as peças procedurais e o visual é exatamente o atual.
+
+Como usar
+---------
+1. Baixe/compre o pacote (ex.: "Hospital Wing" na Fab) e exporte/converta os modelos que quiser para .glb.
+   Verifique a licença do pacote antes de publicar o jogo: os GLB ficam acessíveis a quem abrir o site.
+2. Copie os .glb para esta pasta (public/models/hospital/).
+3. Abra manifest.json e, em cada peça que quiser trocar, preencha "file" com o nome do arquivo:
+       "bed": { "file": "SM_Bed_Abandoned.glb", "height": 1.1 }
+   - height     altura final em metros (o modelo é escalado por ela; largura e profundidade acompanham)
+   - rotationY  giro extra em radianos se vier virado (3.1416 = meia-volta, 1.5708 = um quarto de volta)
+   - yOffset    sobe/desce o modelo em metros
+   - tint       0..1 escurece o modelo (0.6 = 60% do brilho)
+4. Reinicie o servidor (npm run dev). Se um arquivo não existir, aparece um aviso no console e a peça procedural
+   é usada no lugar.
+
+Peças (encaixes) — o manifest.json já vem preenchido com os assets fornecidos
+----------------------------------------------------------------------------
+bed            leito                              gurneyCovered  maca com corpo coberto por lençol
+gurney         maca vazia                         ivStand/ivStand2  suportes de soro (alternam)
+cart           carrinho                           cartSurgical   carrinho cirúrgico (sala de cirurgia)
+shelf          armário alto                       chair          cadeira
+screen         divisória de cama (enfermaria)     cabinet        arquivo de gavetas (extra, nas paredes)
+medCabinet     armário de remédios na parede      lamp           abajur de chão (extra)
+doorLeafL/R    folhas da porta de saída do hospital e da entrada do prédio
+wheelchair, operatingTable, morgueTable, corpse, coveredBody  sem asset: continuam procedurais
+exterior       prédio do hospital no fim da rua (building.glb + building.json)
+
+Observações
+-----------
+- Só as peças "em pé" são trocadas; as tombadas (soro caído, carrinho virado, cadeira virada) continuam procedurais.
+- As colisões não mudam ao trocar um modelo: o hospital continua com a mesma planta.
+- Origem dos modelos: o jogo centraliza cada modelo no ponto da peça e apoia a base no chão. Se o modelo vier com
+  eixos diferentes (Z para cima), exporte como glTF/GLB (Y para cima) ou ajuste "rotationY".
+- "exterior": "scale" (escala do prédio), "position" ([x, y, z] da origem do modelo) e "data" (colisão e entrada, geradas
+  junto do GLB). Sem "data", o prédio entra sem colisão própria: a fachada procedural é usada no lugar.
+- Desempenho: cada modelo é um conjunto de meshes separados (não são fundidos como as peças procedurais).
+  Prefira versões de baixa poligonagem (LOD) e texturas 1K–2K.

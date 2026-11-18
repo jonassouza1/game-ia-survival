@@ -110,6 +110,9 @@ src/
     policeStation.js      saguão da R.P.D.
     cityStreet.js         rua de Raccoon City
     hospital.js            hospital abandonado (interior procedural, estilo The Last of Us)
+    hospitalAssets.js     descobre quais GLB opcionais do hospital existem (manifest.json)
+    hospitalExterior.js   fachada procedural do hospital (alternativa, sem asset)
+    hospitalBuilding.js   posiciona o prédio do pacote: colisão, pórtico e porta de entrada
     textures.js           desenhos gráficos (vitral, medalhão, brasão)
     props.js              loader/clone/colisão dos props CC0
   player/player.js        personagem SWAT/Mixamo, IK de mira, câmera e lanternas
@@ -136,9 +139,17 @@ recepção, corredor central, enfermaria (oeste), cirurgia (leste), necrotério 
 emergência acorrentada. Há 4 zumbis parados no escuro (`roster.js`, local `hospital`), 2 pacotes de munição e 8 itens
 examináveis. A música é cortada ali; só chuva e vento distantes.
 
-Não há assets externos de hospital: macas, leitos, soro, cadeiras de rodas, corpos, sangue, escombros e placas são
-geometria procedural (fundida pelo `Builder` em poucos draw calls) com as texturas PBR e os props que o projeto já tem.
-Para trocar por modelos prontos (GLB), carregue-os com `createProps` e posicione no lugar das peças procedurais.
+O mobiliário usa modelos reais (leito, maca com corpo coberto, carrinhos, soro, armários, divisórias, abajur, cadeira e
+a porta de saída), carregados a partir de `public/models/hospital/` (ver `manifest.json`, `CREDITS.txt` e `LEIA-ME.txt`).
+Sangue, escombros, placas, corpos, mesas de cirurgia e do necrotério, cadeira de rodas e a planta continuam procedurais
+(fundidos pelo `Builder` em poucos draw calls). Sem os arquivos, tudo volta a ser procedural.
+Para trocar por modelos prontos (GLB), use os encaixes de `public/models/hospital/manifest.json` (leia o `LEIA-ME.txt` da
+pasta): cada peça procedural (leito, maca, soro, cadeira de rodas, carrinho, cadeira, estante, mesas, corpos) e a fachada do
+prédio tem um encaixe; havendo arquivo, o modelo entra no lugar exato da peça (a colisão e a planta não mudam), senão
+continua a peça procedural. `src/world/hospitalAssets.js` confere quais arquivos existem na inicialização.
+O prédio do hospital, no fim da rua, é o modelo `building.glb` (tratado: janelas tapadas com tábuas, vidro quebrado, tijolo
+sujo, placa "RACCOON HOSPITAL"), posicionado por `hospitalBuilding.js` com a colisão calculada da planta (`building.json`),
+o pórtico livre e a porta dupla de entrada. Se o GLB não existir, entra uma fachada procedural (`hospitalExterior.js`).
 Para adicionar outro cenário, siga o mesmo caminho: um arquivo `src/world/<nome>.js`, uma entrada em `SCENES`
 (`main.js`), em `LOCATIONS` (`environment.js` e `roster.js`) e uma porta de acesso no mundo de origem.
 

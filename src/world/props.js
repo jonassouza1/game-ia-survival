@@ -12,7 +12,9 @@ export function createProps({ parent, collisions, anisotropy = 4 }) {
 
   async function load(id) {
     if (cache.has(id)) return cache.get(id);
-    const promise = loader.loadAsync(`/models/polyhaven/${id}/${id}.gltf`).then(({ scene }) => {
+    // Ids simples vêm da Poly Haven; caminhos que começam com '/' são arquivos GLB/GLTF próprios (ex.: /models/hospital/bed.glb).
+    const url = id.startsWith('/') ? id : `/models/polyhaven/${id}/${id}.gltf`;
+    const promise = loader.loadAsync(url).then(({ scene }) => {
       scene.traverse((object) => {
         if (!object.isMesh) return;
         object.castShadow = true;
