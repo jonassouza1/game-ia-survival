@@ -44,12 +44,12 @@ export function createProps({ parent, collisions, anisotropy = 4 }) {
   /**
    * @param {string} id
    * @param {object} placement
-   *   { position: [x,y,z], height, rotationY, tint, collider: {w,d,h}, name }
+   *   { position: [x,y,z], height, rotationY, tint, collider: {w,d,h}, name, tilt: [rx, rz] }
    */
   async function place(id, placement) {
     const {
       position = [0, 0, 0], height = 1, rotationY = 0, tint = null,
-      collider = null, name = id,
+      collider = null, name = id, tilt = null, origin = false,
     } = placement;
 
     if (collider) {
@@ -67,16 +67,29 @@ export function createProps({ parent, collisions, anisotropy = 4 }) {
     const initialBounds = new THREE.Box3().setFromObject(model);
     const initialSize = initialBounds.getSize(new THREE.Vector3());
     if (!Number.isFinite(initialSize.y) || initialSize.y <= 0.001) return null;
-    model.scale.setScalar(height / initialSize.y);
+    model.scale.setScalar(height / initialSize.y);       // `height` é a altura do modelo EM PÉ (antes de tombar)
+    if (tilt) {
+      // tilt = [rx, rz] em radianos: tomba a peça (ex.: [0, π/2] deita uma cadeira de lado) e depois aplica o giro em Y.
+      model.rotation.order = 'YXZ';
+      model.rotation.set(tilt[0], rotationY, tilt[1]);
+    }
     model.updateMatrixWorld(true);
 
-    const bounds = new THREE.Box3().setFromObject(model);
+    // Peça tombada: a caixa "rápida" (cantos da caixa local girada) fica maior que o modelo e a peça acabava
+    // flutuando ~10 cm. Com `precise` a caixa vem dos vértices e a peça encosta mesmo no chão.
+    const bounds = new THREE.Box3().setFromObject(model, Boolean(tilt));
     const center = bounds.getCenter(new THREE.Vector3());
-    model.position.set(
-      position[0] - center.x,
-      position[1] - bounds.min.y,
-      position[2] - center.z,
-    );
+    if (origin) {
+      // origin: true → a ORIGEM do modelo vai para `position` (sem centralizar pela caixa envolvente). Serve para peças
+      // com partes que se projetam (gavetas abertas), em que o centro da caixa não é um ponto de referência útil.
+      model.position.set(position[0], position[1], position[2]);
+    } else {
+      model.position.set(
+        position[0] - center.x,
+        position[1] - bounds.min.y,
+        position[2] - center.z,
+      );
+    }
 
     if (tint !== null) {
       model.traverse((object) => {

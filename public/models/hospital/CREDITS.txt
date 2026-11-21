@@ -26,3 +26,17 @@ Tratamento aplicado (feito para este projeto)
   ("광주제중병원") foi substituída por "RACCOON HOSPITAL"; 49 janelas receberam tábuas (geometria gravada no GLB);
   a planta de colisão foi calculada a partir da geometria (building.json).
 - Cena MemoryZone04: apenas as peças listadas acima foram extraídas (a estrutura/arquitetura da cena não é usada).
+
+
+Modelos adicionados nesta atualização
+-------------------------------------
+Modelados para este projeto (tools/hospital-assets): sign_hanging.glb, sign_wall.glb, sign_exit.glb.
+Derivados do gurney_covered.glb acima (mesma origem e licença): covered_body.glb, steel_gurney.glb.
+
+De terceiros — LICENÇA CC BY 4.0, ATRIBUIÇÃO OBRIGATÓRIA (também em public/ASSET-CREDITS.txt):
+  wheelchair.glb   "Cadeira De Rodas" por Evanewton — https://sketchfab.com/3d-models/cadeira-de-rodas-b990a8fc6ec34b89ba65d9537be75388
+  body_bag.glb     "Corpo" por naira001 — https://sketchfab.com/3d-models/corpo-2eb7dad00f6446d28f38ce68e4905d50
+  body_shroud.glb  (mesma fonte; o modelo original traz dois corpos, separados e reescalados; cores clareadas)
+  Licença: https://creativecommons.org/licenses/by/4.0/
+  morgue_cabinet.glb  "Morgue Refrigerator. Dead - 16MB" por Mehdi Shahsavan — https://sketchfab.com/3d-models/morgue-refrigerator-dead-16mb-03c635cac5484a7785a5fc93eba05b15
+                      (CC BY 4.0; só o bloco 01, gavetas abertas/origem ajustadas, texturas em WebP)

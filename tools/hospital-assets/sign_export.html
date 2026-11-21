@@ -1,0 +1,44 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+// ?kind=hanging|wall|exit  — placa com moldura de aço; a face ("Face") recebe a textura em tempo de execução.
+const kind = new URLSearchParams(location.search).get('kind') || 'hanging';
+const SPEC = {
+  hanging: { w: 2.6, h: 0.7, d: 0.06, bar: 0.045, chain: 0.55 },
+  wall:    { w: 4.2, h: 0.9, d: 0.07, bar: 0.055, chain: 0 },
+  exit:    { w: 1.4, h: 0.4, d: 0.07, bar: 0.035, chain: 0, hood: true },
+}[kind];
+const { w, h, d, bar, chain } = SPEC;
+const frameMat = new THREE.MeshStandardMaterial({ name: 'Moldura', color: 0x4a4e50, metalness: 0.8, roughness: 0.5 });
+const faceMat = new THREE.MeshStandardMaterial({ name: 'Face', color: 0xffffff, metalness: 0, roughness: 0.8 });
+const geos = [];
+const add = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { const c = g.clone(); c.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1))); geos.push(c.index ? c.toNonIndexed() : c); };
+const B = (a, b, c) => new THREE.BoxGeometry(a, b, c);
+// base em y = 0, centro em x = 0, a face aponta para +Z
+add(B(w, h, 0.02), 0, h / 2, -d / 2 + 0.01, 0, 0, 0);                         // chapa de trás
+add(B(w, bar, d), 0, bar / 2, 0); add(B(w, bar, d), 0, h - bar / 2, 0);       // barras horizontais
+add(B(bar, h - 2 * bar, d), -w / 2 + bar / 2, h / 2, 0); add(B(bar, h - 2 * bar, d), w / 2 - bar / 2, h / 2, 0);
+for (const sx of [-1, 1]) for (const sy of [0, 1]) {                           // parafusos nos cantos
+  add(new THREE.CylinderGeometry(0.014, 0.014, 0.014, 8).rotateX(Math.PI / 2), sx * (w / 2 - bar / 2), sy ? h - bar / 2 : bar / 2, d / 2 + 0.005);
+}
+if (chain > 0) {                                                                // correntes até o teto
+  for (const sx of [-1, 1]) {
+    add(new THREE.CylinderGeometry(0.009, 0.009, chain, 6), sx * (w / 2 - 0.22), h + chain / 2, 0);
+    add(B(0.05, 0.03, 0.05), sx * (w / 2 - 0.22), h + chain, 0);                // placa de fixação no teto
+    add(new THREE.TorusGeometry(0.018, 0.006, 5, 10), sx * (w / 2 - 0.22), h + 0.012, 0);
+  }
+}
+if (SPEC.hood) add(B(w + 0.04, 0.03, d + 0.05), 0, h + 0.015, 0.012);           // aba de cima da placa de saída
+const frame = new THREE.Mesh(mergeGeometries(geos, false), frameMat); frame.name = 'Moldura';
+const face = new THREE.Mesh(new THREE.PlaneGeometry(w - 2 * bar, h - 2 * bar), faceMat);
+face.name = 'Face'; face.position.set(0, h / 2, d / 2 - 0.012);
+const root = new THREE.Group(); root.name = 'Placa_' + kind; root.add(frame, face);
+const bb = new THREE.Box3().setFromObject(root);
+console.log('size', bb.getSize(new THREE.Vector3()).toArray().map((x) => +x.toFixed(3)).join(' '));
+new GLTFExporter().parse(root, (buf) => {
+  const bytes = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  window.__glb = btoa(s); window.__done = true;
+}, (e) => console.log('erro', e), { binary: true });
+</script></body></html>

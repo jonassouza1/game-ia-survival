@@ -92,6 +92,26 @@ Assets CC0 já presentes no projeto
   Survival, com cliques, raspagem metálica e impactos mecânicos. Não é uma
   gravação retirada de Resident Evil.
 
+Modelos de terceiros (CC BY 4.0) — interior do hospital
+-------------------------------------------------------
+- "Cadeira De Rodas" por Evanewton (https://sketchfab.com/evanewton)
+  Fonte: https://sketchfab.com/3d-models/cadeira-de-rodas-b990a8fc6ec34b89ba65d9537be75388
+  Licença: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Uso: public/models/hospital/wheelchair.glb (apenas redimensionada pelo jogo).
+- "Corpo" por naira001 (https://sketchfab.com/naira001)
+  Fonte: https://sketchfab.com/3d-models/corpo-2eb7dad00f6446d28f38ce68e4905d50
+  Licença: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Uso: public/models/hospital/body_bag.glb e body_shroud.glb. Alterações: o modelo foi
+  separado em duas peças, reescalado para ~1,9 m, com base no chão e cores clareadas
+  (tools/hospital-assets/make-body-bags.mjs).
+
+- "Morgue Refrigerator. Dead - 16MB" por Mehdi Shahsavan (https://sketchfab.com/ahmagh2e)
+  Fonte: https://sketchfab.com/3d-models/morgue-refrigerator-dead-16mb-03c635cac5484a7785a5fc93eba05b15
+  Licença: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Uso: public/models/hospital/morgue_cabinet.glb. Alterações: usado só um dos dois blocos de gavetas, com a origem
+  movida para o fundo do gabinete, gavetas escolhidas abertas (porta girada e bandeja puxada), peças mescladas por
+  material e texturas convertidas para WebP (tools/hospital-assets/make-morgue-cabinet.mjs).
+
 Modelos e texturas pré-existentes
 ---------------------------------
 - Os modelos de prédios/carros em public/models/*.glb já faziam parte do projeto

@@ -47,6 +47,11 @@ function worldUV(geometry, tile = 2) {
 export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor = null } = {}) {
   // Prédio do pacote (com planta de colisão e entrada) ou, sem ele, a fachada procedural / um GLB simples.
   const useHospitalBuilding = Boolean(hospitalExterior?.data);
+  // Entorno do hospital: as alas do prédio vão até x = ±14,23 e a fachada começa em z ≈ 69,5. O último prédio
+  // lateral (z = 71) e o beco seguinte (z = 78) ficavam dentro delas. Agora o prédio vira um "anexo" que recua e
+  // encosta na lateral do hospital, e o beco que sobrava dentro da ala deixa de existir.
+  const HOSPITAL_FLANK_X = 14.75;     // face interna do anexo (a ala do hospital termina em ±14,23)
+  const HOSPITAL_ANNEX_Z = 66.05;     // face frontal do anexo: alinhada à parede do beco de z = 64
   const rpdSign = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -239,12 +244,19 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   for (const side of [-1, 1]) {
     for (const [index, z] of [1, 15, 29, 43, 57, 71].entries()) {
       const asset = ['large_building_a', 'large_building_b', 'big_building'][index % 3];
+      const annex = useHospitalBuilding && index === 5;
       loadStreetModel(`/models/${asset}/${asset}.glb`, {
         height: index % 3 === 2 ? 10.5 : 9.2,
         position: { x: side * 15.1, y: 0, z },
         rotationY: -side * Math.PI / 2,
         tint: index % 3 === 2 ? 0.35 : 0.48,
-      });
+      }, annex ? (model) => {
+        // Anexo do hospital: encosta a face interna na lateral da ala e a frente no beco anterior.
+        const bounds = new THREE.Box3().setFromObject(model);
+        model.position.x += side > 0 ? HOSPITAL_FLANK_X - bounds.min.x : -HOSPITAL_FLANK_X - bounds.max.x;
+        model.position.z += HOSPITAL_ANNEX_Z - bounds.min.z;
+        model.updateMatrixWorld(true);
+      } : undefined);
       if (index % 2 === 0) {
         const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.72), materials.storefrontSign);
         sign.position.set(side * 10.9, 5.2, z);
@@ -285,6 +297,11 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     pbr('concrete_pavement', { tile: 2, color, roughness: 1, normalScale: 0.8 }));
   for (const side of [-1, 1]) {
     for (const [index, z] of [8, 22, 36, 50, 64, 78].entries()) {
+      // O beco de z = 78 cairia dentro da ala do hospital. Ele é montado normalmente (para o gerador aleatório
+      // seguir a mesma sequência de antes e o resto da rua não mudar) e depois descartado.
+      const discardAlley = useHospitalBuilding && index === 5
+        ? { children: group.children.length, boxes: staticBoxes.length, lights: alleyLights.length, fixtures: streetLightPool.fixtures.length }
+        : null;
       const alleyFace = alleyWallVariants[(index + (side > 0 ? 1 : 0)) % alleyWallVariants.length];
       box(6.7, 0.06, 14.4, materials.asphalt, side * 14.35, 0.02, z);
       for (const wallOffset of [-4.6, 4.6]) {
@@ -441,6 +458,12 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
         bag.position.set(side * (12.0 + bagIndex * 0.55), 0.3, z - 1.5 + bagIndex * 0.75);
         bag.rotation.y = streetRandom() * Math.PI;
         group.add(bag);
+      }
+      if (discardAlley) {
+        group.children.slice(discardAlley.children).forEach((object) => group.remove(object));
+        staticBoxes.splice(discardAlley.boxes);
+        alleyLights.splice(discardAlley.lights);
+        streetLightPool.fixtures.splice(discardAlley.fixtures);
       }
     }
   }
@@ -863,10 +886,14 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   for (const side of [-1, 1]) {
     for (const [index, z] of [4, 18, 32, 46, 60, 74].entries()) {
       const x = side * 12.7;
+      const lit = (index + (side < 0 ? 0 : 1)) % 3 !== 1;
+      if (useHospitalBuilding && z > 70) {          // o poste de z = 74 ficaria dentro da ala do hospital
+        if (lit) streetRandom();                    // mantém a sequência aleatória
+        continue;
+      }
       loadStreetModel('/models/street_light/street_light.glb', {
         height: 7.4, position: { x, y: 0, z }, rotationY: side < 0 ? Math.PI : 0, tint: 0.68,
       });
-      const lit = (index + (side < 0 ? 0 : 1)) % 3 !== 1;
       const fixtureX = x + side * 0.34;
       const lampPosition = new THREE.Vector3(fixtureX, 6.92, z);
       const fixture = streetLightPool.add({
@@ -890,6 +917,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   collisions.addBox(0, -9.75, 10.4, 0.6);
   for (const side of [-1, 1]) {
     for (const [index, z] of [8, 22, 36, 50, 64, 78].entries()) {
+      if (useHospitalBuilding && index === 5) continue;      // beco removido (ver HOSPITAL_FLANK_X)
       collisions.addFloor({
         minX: side > 0 ? 14.5 : -27.45,
         maxX: side > 0 ? 27.45 : -14.5,
@@ -973,6 +1001,11 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     });
     hospitalDoorLeaves.push(...building.leaves);
     makeHospitalDoorItem(building.doorPosition, 2.8);
+    for (const side of [-1, 1]) {
+      // Pilar de tijolo que fecha a fresta entre a ala (x ±14,23) e o anexo, e impede o jogador de entrar nela.
+      box(0.62, 11.0, 6.0, materials.brickSoot, side * 14.5, 5.5, 72.55);
+      collisions.addBox(side * 14.5, 72.55, 0.62, 6.0, { y0: 0, y1: 11 });
+    }
   } else {
     // Fachada procedural (ou GLB simples): portas apodrecidas, com tábuas arrancadas.
     // O prédio (modelo GLB) não tinha colisão: sem isto o jogador atravessava a fachada.

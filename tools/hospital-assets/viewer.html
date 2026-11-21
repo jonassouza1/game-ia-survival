@@ -1,0 +1,32 @@
+<!doctype html><html><body style="margin:0;background:#222"><canvas id="c"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const files = (q.get('m') || '').split(',').filter(Boolean);
+const az = +(q.get('az') ?? 35) * Math.PI / 180, el = +(q.get('el') ?? 25) * Math.PI / 180;
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setSize(960, 640); renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x3a3d40);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 1.6));
+const dl = new THREE.DirectionalLight(0xffffff, 2.2); dl.position.set(3, 6, 4); scene.add(dl);
+const grid = new THREE.GridHelper(10, 20, 0x888888, 0x555555); scene.add(grid);
+const group = new THREE.Group(); scene.add(group);
+let x = 0;
+for (const f of files) {
+  const [path, h] = f.split('@');
+  const gltf = await new GLTFLoader().loadAsync(path);
+  const m = gltf.scene;
+  const b0 = new THREE.Box3().setFromObject(m); const s0 = b0.getSize(new THREE.Vector3());
+  if (h) m.scale.setScalar(+h / s0.y);
+  m.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(m), c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3());
+  m.position.set(x - c.x, -b.min.y, -c.z); x += s.x + 0.4;
+  group.add(m); console.log('model', path, 'size', s.x.toFixed(2), s.y.toFixed(2), s.z.toFixed(2));
+}
+const box = new THREE.Box3().setFromObject(group), ctr = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+const r = Math.max(sz.x, sz.y, sz.z) * 1.6 + 0.5;
+const cam = new THREE.PerspectiveCamera(40, 960 / 640, 0.05, 100);
+cam.position.set(ctr.x + r * Math.sin(az) * Math.cos(el), ctr.y + r * Math.sin(el), ctr.z + r * Math.cos(az) * Math.cos(el)); cam.lookAt(ctr);
+renderer.render(scene, cam); window.__done = true;
+</script></body></html>

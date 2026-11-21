@@ -28,12 +28,20 @@ shelf          armário alto                       chair          cadeira
 screen         divisória de cama (enfermaria)     cabinet        arquivo de gavetas (extra, nas paredes)
 medCabinet     armário de remédios na parede      lamp           abajur de chão (extra)
 doorLeafL/R    folhas da porta de saída do hospital e da entrada do prédio
-wheelchair, operatingTable, morgueTable, corpse, coveredBody  sem asset: continuam procedurais
+wheelchair      cadeira de rodas (wheelchair.glb, de Evanewton, CC BY 4.0)
+operatingTable/morgueTable  maca de aço vazia (steel_gurney.glb, derivada de gurney_covered.glb)
+coveredBody     corpo sob lençol (covered_body.glb, derivado de gurney_covered.glb)
+bodyBag         saco mortuário (body_bag.glb, de naira001, CC BY 4.0)
+bodyShroud      corpo sob mortalha (body_shroud.glb, mesma fonte)  — os três 'corpo coberto' se revezam
+morgueCabinet   gabinete refrigerado 5x3 gavetas, 3 abertas (morgue_cabinet.glb, de Mehdi Shahsavan, CC BY 4.0).
+                A ORIGEM do modelo é o chão, encostada na parede de fundo; é posicionado com { origin: true }.
+signHanging/signWall/signExit  placas com moldura (sign_*.glb); a face "Face" recebe a textura de texto
+corpse          corpos: usam os personagens dos zumbis (src/world/hospitalBodies.js); um GLB aqui ainda tem prioridade
 exterior       prédio do hospital no fim da rua (building.glb + building.json)
 
 Observações
 -----------
-- Só as peças "em pé" são trocadas; as tombadas (soro caído, carrinho virado, cadeira virada) continuam procedurais.
+- Peças tombadas (soro, carrinho, cadeira, estante) usam o mesmo modelo deitado de lado (opção tilt em props.place).
 - As colisões não mudam ao trocar um modelo: o hospital continua com a mesma planta.
 - Origem dos modelos: o jogo centraliza cada modelo no ponto da peça e apoia a base no chão. Se o modelo vier com
   eixos diferentes (Z para cima), exporte como glTF/GLB (Y para cima) ou ajuste "rotationY".

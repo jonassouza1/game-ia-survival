@@ -3,7 +3,7 @@
     "Cada entrada liga uma peça do hospital a um arquivo GLB desta pasta. Deixe \"file\" vazio para usar a peça procedural.",
     "height = altura final em metros (o modelo é escalado por ela; largura e profundidade acompanham).",
     "rotationY = giro extra em radianos, se o modelo vier virado (3.1416 = meia-volta, 1.5708 = um quarto de volta).",
-    "yOffset = altura em metros para subir/descer o modelo. tint = 0..1 escurece o modelo (ex.: 0.6).",
+    "Peças 'tombadas' (soro caído, carrinho virado, cadeira virada, estante caída) usam o mesmo modelo deitado de lado; sem arquivo, caem no desenho procedural.",
     "Peças 'tombadas' (soro caído, carrinho virado, cadeira virada) continuam procedurais.",
     "exterior: scale (escala do prédio), position [x,y,z] (onde fica a origem do modelo) e data (colisão e entrada).",
     "Convenção: com rotationY = 0 a frente do móvel aponta para +Z; os valores acima já normalizam cada modelo para isso."
@@ -44,7 +44,7 @@
       "height": 1.9
     },
     "wheelchair": {
-      "file": "",
+      "file": "wheelchair.glb",
       "height": 0.95
     },
     "cart": {
@@ -83,20 +83,23 @@
       "height": 1.9
     },
     "operatingTable": {
-      "file": "",
-      "height": 1.0
+      "file": "steel_gurney.glb",
+      "height": 0.96,
+      "rotationY": 1.5708
     },
     "morgueTable": {
-      "file": "",
-      "height": 1.0
+      "file": "steel_gurney.glb",
+      "height": 0.96,
+      "rotationY": 1.5708
     },
     "corpse": {
       "file": "",
       "height": 0.3
     },
     "coveredBody": {
-      "file": "",
-      "height": 0.3
+      "file": "covered_body.glb",
+      "height": 0.3,
+      "tint": 0.9
     },
     "doorLeafL": {
       "file": "door_leaf_l.glb",
@@ -107,6 +110,32 @@
       "file": "door_leaf_r.glb",
       "height": 2.33,
       "tint": 0.55
+    },
+    "signHanging": {
+      "file": "sign_hanging.glb",
+      "height": 1.265,
+      "tint": 0.9
+    },
+    "signWall": {
+      "file": "sign_wall.glb",
+      "height": 0.9,
+      "tint": 0.9
+    },
+    "signExit": {
+      "file": "sign_exit.glb",
+      "height": 0.43
+    },
+    "bodyBag": {
+      "file": "body_bag.glb",
+      "height": 0.34
+    },
+    "bodyShroud": {
+      "file": "body_shroud.glb",
+      "height": 0.31
+    },
+    "morgueCabinet": {
+      "file": "morgue_cabinet.glb",
+      "height": 2.4
     }
   }
 }

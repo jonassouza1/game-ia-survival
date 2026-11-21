@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Builder } from './builder.js';
+import { createBodyKit } from './hospitalBodies.js';
 import { createProps } from './props.js';
 import { LightPool } from '../render/lightPool.js';
 import { pbr, solid, glow } from '../render/pbr.js';
@@ -68,10 +69,6 @@ export function buildHospital(scene, assets = {}) {
     curtain: mk(solid({ color: 0x5d6d73, roughness: 1 })),
     sheetOld: mk(solid({ color: 0x8b8776, roughness: 1 })),
     mattress: mk(solid({ color: 0x86836f, roughness: 1 })),
-    blood: mk(solid({ color: 0x3b0907, roughness: 0.3, metalness: 0.1 })),
-    bloodOld: mk(solid({ color: 0x24100d, roughness: 0.85 })),
-    dirt: mk(solid({ color: 0x15140f, roughness: 1 })),
-    water: mk(solid({ color: 0x040608, roughness: 0.04, metalness: 0.3 })),
     skin: mk(solid({ color: 0x8a9482, roughness: 0.9 })),
     scrubs: mk(solid({ color: 0x35625f, roughness: 1 })),
     coat: mk(solid({ color: 0xb2afa0, roughness: 1 })),
@@ -128,23 +125,92 @@ export function buildHospital(scene, assets = {}) {
     }, 512, 128, { transparent: true, alphaTest: 0.2 }),
   };
 
+  // Manchas no chão (poças e sujeira): máscara orgânica feita de vários borrões macios, em vez de retângulos.
+  // Antes eram caixas finas de borda dura — a "água" tinha material quase espelho (rugosidade 0,04) e a "sujeira" era
+  // um retângulo preto de até 5,5 x 8 m — e apareciam como quadrados estranhos no chão.
+  const stainMaterial = ({ seed, blobs, spread, radius, rgb, alpha, roughness, metalness = 0 }) => {
+    const size = 256, canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const g = canvas.getContext('2d');
+    let s = seed;
+    const r = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    g.clearRect(0, 0, size, size);
+    for (let i = 0; i < blobs; i++) {
+      const a = r() * Math.PI * 2, d = Math.pow(r(), 0.7) * size * spread;
+      const cx = size / 2 + Math.cos(a) * d * 1.2, cy = size / 2 + Math.sin(a) * d;
+      const rad = size * (radius[0] + r() * (radius[1] - radius[0]));
+      const grad = g.createRadialGradient(cx, cy, rad * 0.15, cx, cy, rad);
+      grad.addColorStop(0, `rgba(${rgb},${alpha})`); grad.addColorStop(0.6, `rgba(${rgb},${alpha * 0.55})`); grad.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fill();
+    }
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const m = solid({ map, color: 0xffffff, roughness, metalness, transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    m.userData.uv = 'keep';
+    return mk(m);
+  };
+  M.water = stainMaterial({ seed: 7, blobs: 16, spread: 0.2, radius: [0.17, 0.34], rgb: '8,13,17', alpha: 0.62, roughness: 0.18 });
+  M.dirt = stainMaterial({ seed: 11, blobs: 26, spread: 0.3, radius: [0.2, 0.4], rgb: '16,15,11', alpha: 0.5, roughness: 1 });
+  // Sangue: poças com contorno orgânico (3 variações, para não repetir a mesma forma) e uma camada de sangue seco por baixo.
+  M.blood = stainMaterial({ seed: 21, blobs: 14, spread: 0.16, radius: [0.2, 0.36], rgb: '59,9,7', alpha: 0.93, roughness: 0.3, metalness: 0.1 });
+  M.bloodB = stainMaterial({ seed: 22, blobs: 11, spread: 0.22, radius: [0.18, 0.32], rgb: '59,9,7', alpha: 0.93, roughness: 0.3, metalness: 0.1 });
+  M.bloodC = stainMaterial({ seed: 23, blobs: 18, spread: 0.13, radius: [0.22, 0.38], rgb: '59,9,7', alpha: 0.93, roughness: 0.3, metalness: 0.1 });
+  M.bloodOld = stainMaterial({ seed: 31, blobs: 18, spread: 0.24, radius: [0.2, 0.38], rgb: '36,16,13', alpha: 0.85, roughness: 0.85 });
+  // Rastro de sangue (arrastado): faixa ondulada, afinando nas pontas e esmaecendo no fim, com respingos.
+  const streakMaterial = (seed) => {
+    const W = 64, H = 256, canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const g = canvas.getContext('2d');
+    let s = seed;
+    const r = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const paint = (cx, cy, rad, a) => {
+      const grad = g.createRadialGradient(cx, cy, rad * 0.2, cx, cy, rad);
+      grad.addColorStop(0, `rgba(59,9,7,${a})`); grad.addColorStop(0.6, `rgba(59,9,7,${a * 0.6})`); grad.addColorStop(1, 'rgba(59,9,7,0)');
+      g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fill();
+    };
+    for (let i = 0; i <= 110; i++) {
+      const t = i / 110, taper = Math.min(1, t / 0.1, (1 - t) / 0.35);
+      paint(W / 2 + Math.sin(t * 6 + seed) * W * 0.09 + (r() - 0.5) * 6, H * (0.04 + 0.92 * t),
+        W * (0.2 + 0.12 * r()) * (0.3 + 0.7 * taper), 0.9 * (1 - t * 0.5));
+    }
+    for (let i = 0; i < 9; i++) paint(W * (0.12 + 0.76 * r()), H * (r() < 0.5 ? 0.02 + 0.1 * r() : 0.8 + 0.18 * r()), W * (0.03 + 0.05 * r()), 0.85);
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const m = solid({ map, color: 0xffffff, roughness: 0.35, metalness: 0.05, transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    m.userData.uv = 'keep';
+    return mk(m);
+  };
+  const streaks = [streakMaterial(5), streakMaterial(9), streakMaterial(14)];
+
   const b = new Builder();
   const col = new CollisionWorld();
   col.addFloor({ minX: x0 + 0.3, maxX: x1 - 0.3, minZ: z0 + 0.3, maxZ: z1 - 0.3, y: 0 });
   const props = [];
   const decor = createProps({ parent: scene, collisions: col, anisotropy: 8 });
   const pool = new LightPool(scene, { count: 8, distance: 12, decay: 2 });
+  const bodies = createBodyKit(scene);       // corpos com os personagens reais do jogo (ver hospitalBodies.js)
   // Encaixe de asset: se houver arquivo para a peça (ver hospitalAssets.js), usa o modelo no lugar da peça
   // procedural e devolve true. As colisões continuam sendo registradas pelas próprias funções de peça.
-  const asset = (slot, x, y, z, ry = 0) => {
+  // `extra` repassa opções ao props.place — ex.: { tilt: [rx, rz] } para deitar o modelo (peças tombadas).
+  const asset = (slot, x, y, z, ry = 0, extra = {}) => {
     const a = assets[slot];
     if (!a) return false;
-    decor.place(a.url, { position: [x, y + a.yOffset, z], height: a.height, rotationY: ry + a.rotationY, tint: a.tint, name: slot });
+    decor.place(a.url, { position: [x, y + a.yOffset, z], height: a.height, rotationY: ry + a.rotationY, tint: a.tint, name: slot, ...extra });
     return true;
   };
   const D0 = { cam: false };               // decoração: a câmera ignora
   const DN = { cam: false, cast: false };  // sem sombra nem colisão de câmera
   const box = (...a) => b.box(...a);
+  // Placa com moldura (GLB): a face recebe a textura de texto do jogo (`mat`). Sem o arquivo, volta à caixa chapada.
+  // `yc` = altura do CENTRO da placa; `h` = altura da placa sem as correntes.
+  function signPlate(slot, mat, w, h, x, yc, z, ry) {
+    const a = assets[slot];
+    if (!a) { box(w, h, 0.05, mat, x, yc, z, { ry, ...DN }); return; }
+    decor.place(a.url, { position: [x, yc - h / 2 + a.yOffset, z], height: a.height, rotationY: ry + a.rotationY, tint: a.tint, name: slot })
+      .then((model) => model?.traverse((o) => { if (o.isMesh && o.name === 'Face') { o.material = mat; o.castShadow = false; } }));
+  }
 
   // ───────────────────────── Estrutura ─────────────────────────
   // Paredes alinhadas aos eixos, com rodapé escuro e colisão.
@@ -189,11 +255,14 @@ export function buildHospital(scene, assets = {}) {
   const decal = (x, z, w, d, mat, ry = 0, y = 0) => box(w, 0.006, d, mat, x, y + 0.003, z, { ry, ...DN });
   const wallMark = (x, y, z, w, hh, mat, axis) =>               // axis 'x': na face de uma parede x=cte
     (axis === 'x' ? box(0.012, hh, w, mat, x, y, z, DN) : box(w, hh, 0.012, mat, x, y, z, DN));
+  const poolMats = [M.blood, M.bloodB, M.bloodC];
+  let poolCount = 0, smearCount = 0;
   const bloodPool = (x, z, r) => {
-    for (let i = 0; i < 4; i++) decal(x + between(-r, r) * 0.4, z + between(-r, r) * 0.4, r * between(0.8, 1.6), r * between(0.7, 1.3), M.blood, rnd() * 3, 0.001 * i);
+    const first = poolCount++;
+    for (let i = 0; i < 4; i++) decal(x + between(-r, r) * 0.4, z + between(-r, r) * 0.4, r * between(0.8, 1.6), r * between(0.7, 1.3), poolMats[(first + i) % 3], rnd() * 3, 0.001 * i);
     decal(x, z, r * 2, r * 1.6, M.bloodOld, rnd() * 3, 0);
   };
-  const smear = (x, z, len, ry) => { box(0.22, 0.006, len, M.blood, x, 0.004, z, { ry, ...DN }); };
+  const smear = (x, z, len, ry) => { box(0.3, 0.006, len, streaks[smearCount++ % streaks.length], x, 0.004, z, { ry, ...DN }); };
   const rubble = (x, z, n, spread, big = 0.3) => {
     for (let i = 0; i < n; i++) {
       const s = between(0.05, big);
@@ -205,33 +274,60 @@ export function buildHospital(scene, assets = {}) {
     for (let i = 0; i < n; i++) box(between(0.18, 0.3), 0.004, between(0.22, 0.32), M.paper, x + between(-spread, spread), 0.003 + i * 0.0004, z + between(-spread, spread), { ry: rnd() * 6, ...DN });
   };
 
-  function corpse(x, z, ry, { cloth = M.scrubs, y0 = 0, sitting = false, bleed = true } = {}) {
-    const placed = !sitting && asset('corpse', x, y0, z, ry);
-    if (!placed) b.push(x, y0, z, ry);
-    if (placed) { /* modelo no lugar */ } else if (!sitting) {
-      box(0.46, 0.2, 0.62, cloth, 0, 0.12, 0, D0);
-      box(0.42, 0.18, 0.3, cloth, 0, 0.11, 0.44, D0);
-      b.sph(0.12, M.skin, 0, 0.14, -0.44, D0, 7, 5);
+  // Boneco de caixas: só aparece se o modelo do personagem não carregar (rede/arquivo ausente).
+  function proceduralCorpse(bb, x, y0, z, ry, cloth, sitting) {
+    bb.push(x, y0, z, ry);
+    if (!sitting) {
+      bb.box(0.46, 0.2, 0.62, cloth, 0, 0.12, 0, D0);
+      bb.box(0.42, 0.18, 0.3, cloth, 0, 0.11, 0.44, D0);
+      bb.sph(0.12, M.skin, 0, 0.14, -0.44, D0, 7, 5);
       for (const s of [-1, 1]) {
-        b.cyl(0.075, 0.065, 0.8, cloth, s * 0.12, 0.08, 0.98, 6, { rx: Math.PI / 2, ry: s * 0.12, ...D0 });
-        b.cyl(0.05, 0.045, 0.62, cloth, s * 0.32, 0.07, -0.02, 6, { rx: Math.PI / 2, ry: s * (0.25 + rnd() * 0.4), ...D0 });
-        b.sph(0.045, M.skin, s * 0.36, 0.06, 0.28, D0, 5, 4);
+        bb.cyl(0.075, 0.065, 0.8, cloth, s * 0.12, 0.08, 0.98, 6, { rx: Math.PI / 2, ry: s * 0.12, ...D0 });
+        bb.cyl(0.05, 0.045, 0.62, cloth, s * 0.32, 0.07, -0.02, 6, { rx: Math.PI / 2, ry: s * (0.25 + 0.2 * s), ...D0 });
+        bb.sph(0.045, M.skin, s * 0.36, 0.06, 0.28, D0, 5, 4);
       }
     } else {                                              // sentado, encostado na parede (-z local)
-      box(0.42, 0.55, 0.26, cloth, 0, 0.62, 0, D0);
-      box(0.4, 0.2, 0.3, cloth, 0, 0.3, 0.2, D0);
-      b.sph(0.12, M.skin, 0.03, 1.02, 0.02, { ...D0 }, 7, 5);
+      bb.box(0.42, 0.55, 0.26, cloth, 0, 0.62, 0, D0);
+      bb.box(0.4, 0.2, 0.3, cloth, 0, 0.3, 0.2, D0);
+      bb.sph(0.12, M.skin, 0.03, 1.02, 0.02, { ...D0 }, 7, 5);
       for (const s of [-1, 1]) {
-        b.cyl(0.075, 0.065, 0.7, cloth, s * 0.12, 0.1, 0.62, 6, { rx: Math.PI / 2, ry: s * 0.15, ...D0 });
-        b.cyl(0.05, 0.045, 0.5, cloth, s * 0.27, 0.45, 0.14, 6, { rx: 0.9, ...D0 });
+        bb.cyl(0.075, 0.065, 0.7, cloth, s * 0.12, 0.1, 0.62, 6, { rx: Math.PI / 2, ry: s * 0.15, ...D0 });
+        bb.cyl(0.05, 0.045, 0.5, cloth, s * 0.27, 0.45, 0.14, 6, { rx: 0.9, ...D0 });
       }
     }
-    if (!placed) b.pop();
-    if (bleed && y0 === 0) bloodPool(x, z, 0.55);
+    bb.pop();
+  }
+  // Corpos: personagens reais (os mesmos zumbis do jogo) congelados numa pose de morte.
+  //  - deitado: (x, z) é o CENTRO do corpo, a cabeça aponta para -Z local (gira com `ry`);
+  //  - sentado: (x, z) é o ponto da PAREDE onde as costas encostam; `ry` gira para o corpo olhar para o cômodo
+  //    (0 = parede ao norte, +π/2 = parede a oeste, −π/2 = parede a leste, π = parede ao sul).
+  let corpseCount = 0;
+  function corpse(x, z, ry, { cloth = M.scrubs, y0 = 0, sitting = false, bleed = true } = {}) {
+    const placed = !sitting && asset('corpse', x, y0, z, ry);       // um GLB próprio no manifest ainda tem prioridade
+    if (!placed) {
+      const n = corpseCount++;
+      const pose = sitting ? 'sitting' : (y0 > 0 || n % 2 === 0 ? 'back' : 'slumped');   // sobre leito: sempre de costas
+      bodies.add({ x, y: y0, z, ry, pose, cloth: cloth?.color?.getHex?.(), seed: n })
+        .catch((error) => {
+          console.warn('[hospital] corpo com modelo real falhou; usando o boneco simples.', error);
+          const late = new Builder();
+          proceduralCorpse(late, x, y0, z, ry, cloth, sitting);
+          late.finish(scene);
+        });
+    }
+    if (bleed && y0 === 0) {
+      // sentado: o sangue empoça no chão à frente das costas
+      const reach = sitting ? 0.45 : 0;
+      bloodPool(x + Math.sin(ry) * reach, z + Math.cos(ry) * reach, 0.55);
+    }
   }
   // Corpo coberto por lençol (o clássico "evacuaram e deixaram para trás")
+  // Três modelos se revezam (lençol, saco mortuário, mortalha); se algum arquivo faltar, usa o seguinte.
+  const COVERED_SLOTS = ['coveredBody', 'bodyBag', 'bodyShroud'];
+  let coveredCount = 0;
   function coveredBody(x, z, ry, y0, { stain = true } = {}) {
-    if (asset('coveredBody', x, y0, z, ry)) return;
+    const n = coveredCount++;
+    for (let i = 0; i < COVERED_SLOTS.length; i++) if (asset(COVERED_SLOTS[(n + i) % COVERED_SLOTS.length], x, y0, z, ry)) return;
     b.push(x, y0, z, ry);
     const g = new THREE.SphereGeometry(1, 8, 6); g.scale(0.27, 0.15, 0.95);
     b.geo(g, M.sheet, 0, 0.12, 0, D0);
@@ -259,8 +355,9 @@ export function buildHospital(scene, assets = {}) {
     if (blood) box(0.5, 0.012, 0.7, M.blood, 0.05, 0.765, 0.2, { ry: 0.3, ...DN });
     }
     if (!placed) b.pop();
-    if (body === 'covered') coveredBody(x, z, ry, 0.78);
-    if (body === 'dead') corpse(x, z, ry, { cloth: M.gown, y0: 0.78, bleed: false });
+    const mattressTop = placed ? 0.56 : 0.78;        // o colchão do modelo é mais baixo que o da peça procedural
+    if (body === 'covered') coveredBody(x, z, ry, mattressTop);
+    if (body === 'dead') corpse(x, z, ry, { cloth: M.gown, y0: mattressTop, bleed: false });
     col.addBox(x, z, Math.abs(Math.cos(ry)) * 0.95 + Math.abs(Math.sin(ry)) * 2.05, Math.abs(Math.cos(ry)) * 2.05 + Math.abs(Math.sin(ry)) * 0.95, { y0: 0, y1: 0.95 });
   }
   function gurney(x, z, ry, { covered = true } = {}) {
@@ -283,7 +380,10 @@ export function buildHospital(scene, assets = {}) {
   let ivCount = 0;
   function ivStand(x, z, { fallen = false } = {}) {
     if (fallen) {
-      b.push(x, 0, z, rnd() * 6);
+      const spin = rnd() * 6;
+      // Suporte de soro deitado: o mesmo modelo em pé, tombado de lado (cai no chão com a base para um lado).
+      if (asset('ivStand', x, 0, z, spin, { tilt: [0, Math.PI / 2 - 0.05] }) || asset('ivStand2', x, 0, z, spin, { tilt: [0, Math.PI / 2 - 0.05] })) return;
+      b.push(x, 0, z, spin);
       b.cyl(0.015, 0.015, 1.8, M.chrome, 0, 0.03, 0, 5, { rz: Math.PI / 2, ...DN });
       for (let i = 0; i < 5; i++) box(0.3, 0.02, 0.03, M.chrome, 0.9, 0.03, 0, { ry: i * 1.256, ...DN });
       box(0.1, 0.02, 0.16, M.plastic, -0.6, 0.03, 0.05, DN);
@@ -317,6 +417,7 @@ export function buildHospital(scene, assets = {}) {
   }
   function cart(x, z, ry, { fallen = false, surgical = false } = {}) {
     if (!fallen && ((surgical && asset('cartSurgical', x, 0, z, ry)) || asset('cart', x, 0, z, ry))) { col.addBox(x, z, 0.85, 0.85, { y0: 0, y1: 1.0 }); return; }
+    if (fallen && asset('cart', x, 0, z, ry, { tilt: [0.12, Math.PI / 2 - 0.1] })) { col.addBox(x, z, 0.9, 0.9, { y0: 0, y1: 0.6 }); return; }   // virado de lado
     b.push(x, 0, z, ry);
     if (fallen) {
       box(0.8, 0.5, 0.5, M.metal, 0, 0.25, 0, { rz: 1.4, ry: 0.4, ...D0 });
@@ -332,6 +433,7 @@ export function buildHospital(scene, assets = {}) {
   }
   function chair(x, z, ry, fallen) {
     if (!fallen && asset('chair', x, 0, z, ry)) { col.addBox(x, z, 0.5, 0.5, { y0: 0, y1: 0.9 }); return; }
+    if (fallen && asset('chair', x, 0, z, ry, { tilt: [0.15, Math.PI / 2 - 0.08] })) return;     // caída de lado, sem colisão (como antes)
     b.push(x, 0, z, ry);
     if (fallen) {
       box(0.45, 0.05, 0.45, M.seat, 0, 0.23, 0, { rz: Math.PI / 2, rx: 0.1, ...D0 });
@@ -348,6 +450,10 @@ export function buildHospital(scene, assets = {}) {
   function shelf(x, z, ry, { fallen = false } = {}) {
     if (!fallen && asset('shelf', x, 0, z, ry)) {
       col.addBox(x, z, Math.abs(Math.cos(ry)) * 1.2 + Math.abs(Math.sin(ry)) * 0.5, Math.abs(Math.cos(ry)) * 0.5 + Math.abs(Math.sin(ry)) * 1.2, { y0: 0, y1: 2.0 });
+      return;
+    }
+    if (fallen && asset('shelf', x, 0, z, ry, { tilt: [-(Math.PI / 2 - 0.08), 0] })) {          // tombada de bruços no chão
+      col.addBox(x, z, Math.abs(Math.cos(ry)) * 1.2 + Math.abs(Math.sin(ry)) * 0.5, Math.abs(Math.cos(ry)) * 0.5 + Math.abs(Math.sin(ry)) * 1.2, { y0: 0, y1: 0.5 });
       return;
     }
     b.push(x, 0, z, ry);
@@ -423,7 +529,7 @@ export function buildHospital(scene, assets = {}) {
   for (let i = 0; i < 4; i++) box(0.06, 1.4, 0.18, M.wood, 2.4 + i * 0.3, 0.7, 19.4, { rz: between(-0.5, 0.5), ...D0 });
   // Corpos, sangue e bagunça
   corpse(-2.4, 17.6, 0.6, { cloth: M.coat });                         // junto da porta
-  corpse(7.6, 6.9, 2.4, { cloth: M.scrubs, sitting: true });          // encostado na parede, boca do corredor
+  corpse(7.6, 6.17, 0, { cloth: M.scrubs, sitting: true });          // encostado na parede, boca do corredor
   gurney(-5.0, 9.2, 0.4);
   coveredBody(9.2, 12.8, 1.5, 0);
   bloodPool(9.2, 12.8, 0.7);
@@ -431,23 +537,23 @@ export function buildHospital(scene, assets = {}) {
   papers(0, 12, 26, 5); papers(-6, 9, 12, 2);
   rubble(4.2, 9.5, 24, 1.8); ceilingHole(4.2, 9.5, 2.6, 2.2);
   rubble(-6.8, 13.2, 10, 1.2);
-  cart(-5.8, 12.5, 0.5, { fallen: true }); ivStand(-3.6, 8.2, { fallen: true }); ivStand(2.9, 16.4);
+  cart(-6.3, 12.5, 0.5, { fallen: true }); ivStand(-3.6, 8.2, { fallen: true }); ivStand(2.9, 16.4);
   decal(-1.2, 12.6, 2.4, 1.8, M.water, 0.3); decal(5.8, 15.6, 1.6, 1.2, M.water, 1.0);
   decal(0, 13, 8, 6, M.dirt, 0.4);
   // Janelas tapadas com tábuas (frestas de luz da tempestade)
   for (const wz of [9, 16.5]) { boardedWindow(x1, wz, 1); boardedWindow(x0 + 0.3, wz, -1); }
   // Placas e pichações
-  box(4.2, 0.9, 0.06, signs.emergency, 0, 3.1, 6.05, { ...DN, ry: 0 });
+  signPlate('signWall', signs.emergency, 4.2, 0.9, 0, 3.1, 6.05, 0);
   box(2.4, 0.6, 0.04, signs.scrawl('NÃO ENTRE'), 7.0, 2.1, 6.2, DN);
   box(2.4, 0.6, 0.04, signs.scrawl('ELES VOLTAM'), -7.3, 2.4, 6.2, DN);
   wallMark(x1 - 0.16, 1.4, 6.0, 1.5, 1.2, M.bloodOld, 'x');
   for (let i = 0; i < 5; i++) box(0.12, 0.2, 0.012, M.blood, -3.0 + i * 0.16, 1.5 + (i % 2) * 0.1, 6.17, DN);   // mãos ensanguentadas na parede
 
   // ───────────────────────── Corredor ─────────────────────────
-  gurney(-1.7, -3.0, 1.62, { covered: true });
-  gurney(1.6, -12.5, 1.5, { covered: false });
+  gurney(-1.3, -3.0, 1.62, { covered: true });
+  gurney(1.1, -12.5, 1.5, { covered: false });
   wheelchair(0.4, -6.2, 0.7); wheelchair(-1.3, 3.6, 2.5);
-  ivStand(1.7, -1.0); ivStand(-1.9, -9.0, { fallen: true });
+  ivStand(1.7, -1.0); ivStand(-1.3, -9.0, { fallen: true });
   cart(1.8, 3.7, 0.2);
   corpse(0.6, -9.4, 0.15, { cloth: M.coat });
   corpse(-1.1, -14.2, 1.3, { cloth: M.gown });
@@ -455,18 +561,18 @@ export function buildHospital(scene, assets = {}) {
   papers(0, -4, 30, 1.8); papers(0, -16, 24, 1.8); rubble(0, -6, 14, 1.4);
   ceilingHole(-0.4, -4.8, 2.0, 1.8); ceilingHole(0.5, -19.5, 1.6, 1.6);
   decal(0, -9.6, 2.2, 3.0, M.water, 0.1); decal(-0.5, -1.2, 1.4, 1.8, M.dirt, 0.4);
-  box(2.6, 0.7, 0.05, signs.ward, -2.2, 2.9, 0.5, { ry: Math.PI / 2, ...DN });
-  box(2.6, 0.7, 0.05, signs.icu, 2.2, 2.9, 0.5, { ry: -Math.PI / 2, ...DN });
-  box(2.6, 0.7, 0.05, signs.morgue, -2.2, 2.9, -18, { ry: Math.PI / 2, ...DN });
-  box(2.6, 0.7, 0.05, signs.icu, 2.2, 2.9, -18, { ry: -Math.PI / 2, ...DN });
-  box(2.6, 0.7, 0.04, signs.scrawl('SEM SAÍDA'), 0, 2.3, -9.8, DN);
+  signPlate('signHanging', signs.ward, 2.6, 0.7, -2.2, 2.9, 0.5, Math.PI / 2);
+  signPlate('signHanging', signs.icu, 2.6, 0.7, 2.2, 2.9, 0.5, -Math.PI / 2);
+  signPlate('signHanging', signs.morgue, 2.6, 0.7, -2.2, 2.9, -18, Math.PI / 2);
+  signPlate('signHanging', signs.icu, 2.6, 0.7, 2.2, 2.9, -18, -Math.PI / 2);
   for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) box(0.012, 0.22, 0.14, M.blood, sx * 2.33, 1.3 + i * 0.08, -8 - i * 0.25, DN);
   // Saída de emergência no fim do corredor, acorrentada
   box(2.0, 2.4, 0.12, M.metal, 0, 1.2, z0 + 0.2, D0);
   box(0.06, 2.3, 0.14, M.dark, 0, 1.2, z0 + 0.28, D0);
   b.cyl(0.025, 0.025, 2.4, M.chrome, 0, 1.15, z0 + 0.4, 6, { rz: Math.PI / 2, ...D0 });
   b.cyl(0.025, 0.025, 2.4, M.chrome, 0, 0.8, z0 + 0.42, 6, { rz: Math.PI / 2, rx: 0.05, ...D0 });
-  box(1.4, 0.4, 0.05, signs.exit, 0, 2.7, z0 + 0.3, DN);
+  signPlate('signExit', signs.exit, 1.4, 0.4, 0, 2.7, z0 + 0.21, 0);
+  box(1.7, 0.46, 0.04, signs.scrawl('SEM SAÍDA'), 0, 1.85, z0 + 0.27, DN);        // pichação na própria porta do fundo
   box(1.3, 0.04, 0.5, M.screenOff, 0, 0.02, z0 + 0.9, DN);
   decal(0, z0 + 1.0, 1.4, 0.9, M.bloodOld, 0.2);
   box(0.03, 1.9, 0.03, M.dark, -0.9, 1.0, z0 + 0.3, DN);
@@ -490,7 +596,7 @@ export function buildHospital(scene, assets = {}) {
     box(0.03, len, 0.3, M.curtain, -8.6, h - len / 2, cz + (i - 2) * 0.32, { rz: between(-0.06, 0.06), rx: between(-0.05, 0.05), ...DN });
   }
   if (!useScreens) { box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, 1.9, DN); box(0.05, 0.04, 2.0, M.chrome, -8.6, h - 0.05, -1.8, DN); }
-  corpse(-5.0, -0.6, 2.2, { cloth: M.scrubs }); corpse(-3.3, 2.5, 0.2, { cloth: M.gown, sitting: true });
+  corpse(-5.0, -0.6, 2.2, { cloth: M.scrubs }); corpse(-2.67, 2.5, -Math.PI / 2, { cloth: M.gown, sitting: true });
   papers(-6, 0, 22, 3); rubble(-6.5, 3.8, 12, 1.5); ceilingHole(-6.8, 3.8, 2.4, 2.0);
   decal(-6.2, -3.4, 2.0, 1.6, M.water, 0.6); decal(-7, 0.5, 5.5, 8, M.dirt, 0.3);
   boardedWindow(x0 + 0.3, 3.0, -1); boardedWindow(x0 + 0.3, -4.0, -1);
@@ -510,33 +616,57 @@ export function buildHospital(scene, assets = {}) {
   b.cyl(0.03, 0.03, 1.7, M.chrome, 7.1, 2.9, -1.6, 5, { rx: 0.2, rz: 0.15, ...DN });
   for (let i = 0; i < 4; i++) box(0.3, 0.02, 0.16, M.chrome, 5.6 + i * 0.1, 0.96 + i * 0.01, 1.2 - i * 0.05, { ry: 0.3 * i, ...DN });   // instrumentos
   box(1.0, 0.8, 0.5, M.metal, 5.4, 0.45, 1.3, D0); col.addBox(5.4, 1.3, 1.1, 0.6, { y0: 0, y1: 0.9 });
-  shelf(10.4, -6.5, -Math.PI / 2); shelf(10.4, 3.3, Math.PI / 2, { fallen: true });
+  shelf(10.27, -6.5, -Math.PI / 2); shelf(10.2, 3.3, Math.PI / 2, { fallen: true });
   box(0.3, 1.2, 1.4, M.metal, 10.7, 1.3, -2.2, D0);                                               // pia
   col.addBox(10.7, -2.2, 0.5, 1.5, { y0: 0, y1: 1.0 }); box(0.04, 0.5, 0.7, M.shard, 10.52, 2.1, -2.2, DN);
   box(0.04, 0.9, 1.1, M.slit, 10.84, 1.9, 0.6, DN);                                                 // negatoscópio
   bloodPool(7, -2, 0.8); papers(7, 0, 24, 3); rubble(4.2, -7.5, 14, 1.4); ceilingHole(8.5, 2.5, 2.2, 1.8);
-  corpse(8.8, -5.4, 0.5, { cloth: M.coat }); corpse(4.4, 3.6, 1.9, { cloth: M.scrubs, sitting: true });
+  corpse(8.8, -5.4, 0.5, { cloth: M.coat }); corpse(2.67, 3.6, Math.PI / 2, { cloth: M.scrubs, sitting: true });
   cart(9.2, 0.4, 0.2, { fallen: true }); cart(4.3, -3.2, 0.9, { surgical: true }); ivStand(5.2, -0.4, { fallen: true });
   decal(6.5, 3.8, 2.4, 1.6, M.water, 0.5); decal(7, -1, 6, 8, M.dirt, 0.6);
   boardedWindow(x1, 4.2, 1); boardedWindow(x1, -4.5, 1);
 
   // ───────────────────────── Necrotério (noroeste) ─────────────────────────
-  // Parede de gavetas refrigeradas: algumas abertas, com lençóis saindo
-  for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
-    const gz = -23.4 + c * 1.05, gy = 0.55 + r * 0.62;
-    box(0.9, 0.55, 0.95, M.chrome, x0 + 0.65, gy, gz, D0);
-    box(0.02, 0.4, 0.8, M.dark, x0 + 1.12, gy, gz, DN);
-    if ((r * 4 + c) % 5 === 0) { box(1.3, 0.06, 0.62, M.chrome, x0 + 1.7, gy, gz, D0); coveredBody(x0 + 1.9, gz, Math.PI / 2, gy + 0.03, { stain: c % 2 === 0 }); }
+  // Gabinete refrigerado (asset morgue_cabinet.glb): 5 x 3 gavetas, 3 abertas com a bandeja puxada e um corpo em cima.
+  // O modelo tem a origem no chão, encostada na parede de fundo e centrada na largura. As constantes abaixo vêm de
+  // tools/hospital-assets/make-morgue-cabinet.mjs (medidas na escala original do arquivo; CAB.s converte para metros).
+  const CAB = {
+    s: 2.4 / 2.669, x: x0 + 0.17, z: -21.0,
+    colZ: [-2.322, -1.162, -0.002, 1.158, 2.318],      // centro de cada coluna (z)
+    trayTop: [0.275, 1.165, 2.055],                     // topo da bandeja por linha (y)
+    trayX: 1.302 + 1.45,                                // centro da bandeja puxada (x)
+    open: [[0, 1], [1, 3], [2, 0]],                     // [linha, coluna] das gavetas abertas
+  };
+  if (asset('morgueCabinet', CAB.x, 0, CAB.z, 0, { origin: true })) {
+    for (const [r, c] of CAB.open) {
+      coveredBody(CAB.x + CAB.trayX * CAB.s, CAB.z + CAB.colZ[c] * CAB.s, Math.PI / 2, CAB.trayTop[r] * CAB.s - 0.02, { stain: c % 2 === 0 });
+    }
+    col.addBox(CAB.x + 1.24, CAB.z, 2.5, 5.3, { y0: 0, y1: 2.5 });
+  } else {
+    // Parede de gavetas refrigeradas: algumas abertas, com lençóis saindo
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
+      const gz = -23.4 + c * 1.05, gy = 0.55 + r * 0.62;
+      box(0.9, 0.55, 0.95, M.chrome, x0 + 0.65, gy, gz, D0);
+      box(0.02, 0.4, 0.8, M.dark, x0 + 1.12, gy, gz, DN);
+      if ((r * 4 + c) % 5 === 0) { box(1.3, 0.06, 0.62, M.chrome, x0 + 1.7, gy, gz, D0); coveredBody(x0 + 1.9, gz, Math.PI / 2, gy + 0.03, { stain: c % 2 === 0 }); }
+    }
+    col.addBox(x0 + 1.3, -21.8, 1.9, 4.6, { y0: 0, y1: 2.2 });
   }
-  col.addBox(x0 + 1.3, -21.8, 1.9, 4.6, { y0: 0, y1: 2.2 });
   for (const mz of [-14, -17.5]) {
     if (!asset('morgueTable', -6.0, 0, mz, 0)) { box(1.0, 0.1, 2.1, M.chrome, -6.0, 0.88, mz, D0); b.cyl(0.08, 0.08, 0.85, M.chrome, -6.0, 0.43, mz, 6, D0); }
     col.addBox(-6, mz, 1.0, 2.1, { y0: 0, y1: 1.0 });
   }
   coveredBody(-6.0, -14, 0, 0.96); coveredBody(-6.0, -17.5, 0, 0.96, { stain: false });
-  for (let i = 0; i < 4; i++) { const g = new THREE.SphereGeometry(1, 7, 5); g.scale(0.45, 0.22, 0.95); b.geo(g, M.bag, -3.9 + between(-0.3, 0.3), 0.2 + (i > 2 ? 0.3 : 0), -23 + i * 0.5, { ry: between(-0.4, 0.4), ...D0 }); }
+  // Pilha de sacos mortuários (3 no chão + 1 por cima). Sem o GLB, volta aos elipsoides de antes.
+  for (let i = 0; i < 4; i++) {
+    const jitter = between(-0.3, 0.3), tilt = between(-0.4, 0.4);              // mantém a sequência aleatória de antes
+    const bx = i < 3 ? -4.55 + i * 0.58 : -4.27, by = i < 3 ? 0 : 0.34, bz = -22.2 + (i < 3 ? 0 : 0.1);
+    if (asset(i === 3 ? 'bodyShroud' : 'bodyBag', bx + jitter * 0.1, by, bz, tilt * 0.35)) continue;
+    const g = new THREE.SphereGeometry(1, 7, 5); g.scale(0.45, 0.22, 0.95);
+    b.geo(g, M.bag, -3.9 + jitter, 0.2 + (i > 2 ? 0.3 : 0), -23 + i * 0.5, { ry: tilt, ...D0 });
+  }
   col.addBox(-4.0, -22.2, 1.4, 2.2, { y0: 0, y1: 0.8 });
-  corpse(-9.0, -12.0, 0.4, { cloth: M.coat }); corpse(-3.7, -12.6, 2.9, { cloth: M.scrubs, sitting: true });
+  corpse(-9.0, -12.0, 0.4, { cloth: M.coat }); corpse(-2.67, -12.6, -Math.PI / 2, { cloth: M.scrubs, sitting: true });
   bloodPool(-6.0, -14, 0.9); bloodPool(-6.0, -17.5, 0.7); papers(-6.5, -16, 18, 2.5); rubble(-8, -12, 10, 1.4);
   decal(-6.5, -19, 3.5, 3.5, M.water, 0.2); decal(-7.2, -16, 5.5, 8, M.dirt, 0.9); ceilingHole(-7.2, -21.5, 2.0, 1.8);
   box(2.2, 0.55, 0.04, signs.scrawl('GAVETA 7'), -4.0, 2.4, -25.8, DN);
@@ -552,7 +682,7 @@ export function buildHospital(scene, assets = {}) {
   function i2g(mz) { return mz === -17.0 ? M.alarmRed : M.screenGreen; }
   ivStand(8.4, -14.6); ivStand(8.5, -19.4, { fallen: true }); ivStand(5.2, -13.0);
   cart(6.3, -12.0, 0.3); cart(7.8, -22.8, 1.4, { fallen: true });
-  corpse(7.2, -18.6, 0.9, { cloth: M.coat }); corpse(5.0, -20.8, 2.0, { cloth: M.gown, sitting: true });
+  corpse(7.2, -18.6, 0.9, { cloth: M.coat }); corpse(2.67, -20.8, Math.PI / 2, { cloth: M.gown, sitting: true });
   bloodPool(7.2, -18.6, 0.8); papers(7, -17, 26, 3); rubble(8, -12, 10, 1.4); ceilingHole(7.0, -15.5, 2.2, 2.0);
   decal(7.5, -20, 3.4, 4, M.water, 0.5); decal(7, -17, 6, 8, M.dirt, 0.2);
   box(2.4, 0.6, 0.04, signs.scrawl('NÃO ABRA'), x1 - 0.17, 2.2, -14.0, { ry: -Math.PI / 2, ...DN });
@@ -590,7 +720,7 @@ export function buildHospital(scene, assets = {}) {
     scene.add(hinge);
     leafMeshes.push(...hinge.children.filter((c) => c.isMesh && c.geometry.parameters.width > 0.5));
   }
-  box(2.6, 0.1, 0.5, M.water, 0, 0.002, z1 - 0.8, DN);                      // poça de chuva que entrou pela porta
+  decal(0, z1 - 0.9, 2.8, 1.1, M.water, 0.05, 0.002);                       // poça de chuva que entrou pela porta
 
   // ───────────────────────── Itens e interações ─────────────────────────
   const state = { ammoWard: false, ammoIcu: false };
@@ -630,7 +760,7 @@ export function buildHospital(scene, assets = {}) {
   // Props escaneados que já fazem parte do projeto (lixo, caixas, bancos)
   decor.place('painted_wooden_bench', { position: [8.9, 0, 11.2], height: 0.9, rotationY: -Math.PI / 2, tint: 0.55, collider: { w: 0.7, d: 1.9, h: 0.9 } });
   decor.place('metal_trash_can', { position: [-3.2, 0, 18.7], height: 0.85, tint: 0.7, collider: { w: 0.5, d: 0.5, h: 0.85 } });
-  decor.place('metal_trash_can', { position: [2.0, 0, -5.6], height: 0.85, rotationY: 1.2, tint: 0.7 });
+  decor.place('metal_trash_can', { position: [1.8, 0, -5.6], height: 0.85, rotationY: 1.2, tint: 0.7 });
   decor.place('trashbag', { position: [-2.9, 0, 17.4], height: 0.45, tint: 0.7 });
   decor.place('trashbag', { position: [1.9, 0, 5.2], height: 0.4, rotationY: 2 });
   decor.place('trashbag', { position: [9.6, 0, -8.6], height: 0.5, tint: 0.6 });
@@ -645,13 +775,13 @@ export function buildHospital(scene, assets = {}) {
   };
   extra('cabinet', -10.5, 8.0, Math.PI / 2, 0.75, 0.75);               // saguão, parede oeste
   extra('cabinet', -10.5, 9.0, Math.PI / 2, 0.75, 0.75);
-  extra('cabinet', 2.1, -4.5, -Math.PI / 2, 0.75, 0.75);               // corredor
-  extra('cabinet', -2.85, -6.2, -Math.PI / 2, 0.75, 0.75);             // enfermaria, parede do corredor
+  extra('cabinet', 1.99, -4.5, -Math.PI / 2, 0.75, 0.75);               // corredor
+  extra('cabinet', -3.0, -6.2, -Math.PI / 2, 0.75, 0.75);             // enfermaria, parede do corredor
   extra('cabinet', 10.5, -8.2, -Math.PI / 2, 0.75, 0.75);              // cirurgia
   extra('cabinet', -3.0, -24.6, Math.PI, 0.75, 0.75);                  // necrotério
-  extra('medCabinet', 10.6, -4.6, -Math.PI / 2, 0.5, 1.3, 1.25, 0);    // armário de remédios na parede (cirurgia)
-  extra('medCabinet', 10.6, 6.9, -Math.PI / 2, 0.5, 1.3, 1.25, 0);     // idem, saguão leste
-  extra('medCabinet', -10.55, -6.5, Math.PI / 2, 0.5, 1.3, 1.25, 0);   // enfermaria
+  extra('medCabinet', 10.62, -1.2, Math.PI, 0.5, 1.3, 1.25, 0);    // armário de remédios na parede (cirurgia)
+  extra('medCabinet', 10.62, 6.9, Math.PI, 0.5, 1.3, 1.25, 0);     // idem, saguão leste
+  extra('medCabinet', -10.62, -6.5, 0, 0.5, 1.3, 1.25, 0);   // enfermaria
   extra('lamp', -9.6, 11.0, 0, 0.45, 0.45);                            // abajures de chão
   extra('lamp', -10.2, -0.9, 0, 0.45, 0.45);
   extra('lamp', 8.4, -9.4, 0, 0.45, 0.45);

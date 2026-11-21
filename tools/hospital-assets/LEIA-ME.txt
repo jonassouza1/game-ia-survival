@@ -1,0 +1,12 @@
+Geradores dos GLBs novos do hospital (reprodutíveis)
+====================================================
+- make-covered-body.mjs / make-steel-gurney.mjs: derivam covered_body.glb e steel_gurney.glb do gurney_covered.glb.
+  Rodar na raiz do projeto, com:  npm i -D @gltf-transform/core @gltf-transform/extensions @gltf-transform/functions
+  e depois  node tools/hospital-assets/make-covered-body.mjs
+- make-body-bags.mjs <corpo.glb> <saida>: separa o 'corpo.glb' (naira001) em body_bag.glb e body_shroud.glb.
+- sign_export.html?kind=hanging|wall|exit: modela e exporta as placas
+  (abra com o servidor de dev; o GLB sai em window.__glb, em base64).
+- viewer.html?m=/models/hospital/arquivo.glb: visualizador simples para conferir um modelo.
+Os caminhos dos imports ('/src/...') assumem que o servidor de dev está na raiz do projeto.
+- make-morgue-cabinet.mjs <morgue_refrigerator.glb> <saida>: gera morgue_cabinet.glb (precisa também do pacote 'sharp').
+  Edite OPEN no topo do script para escolher quais gavetas ficam abertas e atualize CAB em src/world/hospital.js.
