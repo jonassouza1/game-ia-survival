@@ -1,12 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  // Caminho do repositório no GitHub Pages
-  base: '/game-ia-survival/',
-
-  // main.js usa await no nível do módulo
+  // main.js usa `await` no nível do módulo (verifica os assets opcionais do hospital).
   build: { target: 'esnext' },
-
   server: {
     watch: {
       ignored: [
