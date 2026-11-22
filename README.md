@@ -71,7 +71,46 @@ baixo em 1080×810. Em GPU dedicada, o alto fica confortável.
 
 `W A S D` mover · `Shift` correr · `C` andar · `mouse` virar · botão direito
 mirar · botão esquerdo atirar · `I`/`Tab` inventário · `R` recarregar · `E` usar
-· `F` lanterna.
+· `F` lanterna. (Controles de toque: veja *Jogar no celular*.)
+
+## Jogar no celular / tablet
+
+O jogo detecta telas de toque sozinho e liga os controles virtuais (também dá para
+forçar com `?touch=1` no PC, ou desligar com `?touch=0`).
+
+**Pelo Wi‑Fi, direto do seu PC (mais fácil):**
+
+```bash
+npm run dev        # o Vite mostra "Network: http://192.168.x.x:5173"
+```
+
+Abra esse endereço no navegador do celular (PC e celular na mesma rede). Para testar
+um build de produção: `npm run build && npm run preview` (também expõe na rede).
+
+**Controles de toque (use o celular na horizontal):**
+
+| Gesto / botão | Ação |
+| --- | --- |
+| Tocar e arrastar na **metade esquerda** | joystick flutuante: dentro do anel anda/trota (velocidade analógica); **além do anel corre** |
+| Arrastar na **metade direita** | gira a câmera |
+| **FOGO** | saca a arma, mira sozinho e atira; segurar repete o tiro; arrastar o dedo sobre o botão ajusta a mira |
+| **MIRAR** | liga/desliga a mira (botão de alternar) |
+| **RECARR.** | recarrega |
+| **USAR** | aparece perto de objetos/portas, com o nome da ação |
+| **LUZ** · **ITENS** · **II** | lanterna · inventário · pausa |
+
+Detalhes úteis:
+
+- Na tela inicial há o ajuste de **câmera lenta/normal/rápida** (fica salvo no aparelho).
+- No celular o preset gráfico padrão é **baixo** (sem GTAO/MSAA, 1 pixel por pixel CSS);
+  dá para subir para MÉDIO/ALTO na tela inicial se o aparelho aguentar.
+- Ao tocar em **ENTRAR NA DELEGACIA** o jogo pede tela cheia + paisagem (Android/iPad) e mantém a
+  tela acesa quando o navegador permite (precisa de HTTPS). No **iPhone**, o Safari não libera
+  tela cheia: use *Compartilhar → Adicionar à Tela de Início* (há `manifest` e ícones prontos).
+- O jogo pausa sozinho se você girar para retrato ou trocar de app.
+- Vibração leve ao atirar, usar e levar dano (onde o navegador suporta).
+- Código dos controles: `src/input/touchControls.js` (UI e gestos) e `src/input/device.js`
+  (detecção). O jogador expõe `player.touch` / `player.look()` em `src/player/player.js`.
 
 ## Assets e licenças
 
@@ -116,6 +155,9 @@ src/
     textures.js           desenhos gráficos (vitral, medalhão, brasão)
     props.js              loader/clone/colisão dos props CC0
   player/player.js        personagem SWAT/Mixamo, IK de mira, câmera e lanternas
+  input/
+    device.js             detecta celular/tablet (?touch=1|0 força)
+    touchControls.js      joystick, olhar por arrasto e botões de ação
 tools/
   fetch-assets.mjs        download dos assets CC0 e do personagem Mixamo
   write-credits.mjs       geração dos créditos

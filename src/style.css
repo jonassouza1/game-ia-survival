@@ -52,3 +52,77 @@ button{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:2px;c
 #death.show{display:flex}
 #death h2{font:600 clamp(40px,7vw,76px)/1 Impact,'Arial Narrow',sans-serif;letter-spacing:8px;color:#a8281f;margin:0;text-shadow:0 4px 30px #000}
 #death p{font-size:12px;letter-spacing:2px;color:#9a8f80;margin:22px 0 30px}
+
+/* ───────────── Celular / tablet (html.touch) ───────────── */
+.touch-only{display:none}
+#rotate-hint{display:none}
+html.touch .touch-only{display:flex}
+html.touch .touch-help{flex-direction:column;gap:6px;margin-top:20px;font-size:10px;letter-spacing:1px;color:#8f8b7b;line-height:1.5}
+html.touch .touch-help b{color:#c9b57e;font-weight:500}
+html.touch body{overscroll-behavior:none}
+html.touch{touch-action:none}
+html.touch body{position:fixed;inset:0;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+/* Tela inteira (sem as barras do 4:3): a câmera se adapta à proporção do aparelho. */
+html.touch #game{width:100vw;height:100vh;height:100dvh;left:0;top:0;transform:none;aspect-ratio:auto}
+html.touch #help{display:none}
+html.touch #hud{bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left))}
+html.touch #topbar{padding:10px max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));pointer-events:none}
+html.touch #topbar{justify-content:flex-start;gap:14px}
+html.touch .location{font-size:8px;letter-spacing:1px;max-width:36vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.touch #prompt{display:none}  /* no celular o botão USAR faz esse papel */
+html.touch #toast{bottom:auto;top:46px;font-size:11px}
+html.touch #overlay{overflow:auto;padding:12px}
+html.touch #overlay h1{font-size:clamp(34px,11vh,70px)}
+html.touch #overlay p{margin:14px 0}
+html.touch .quality{margin-top:12px;flex-wrap:wrap;justify-content:center}
+html.touch .quality button{padding:10px 14px}
+html.touch #start{padding:16px 30px}
+html.touch .overlay-note{display:none}
+html.touch #retry{padding:16px 30px}
+
+/* Aviso de orientação */
+@media (orientation:portrait){
+  html.touch #rotate-hint{position:absolute;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#050504;text-align:center;letter-spacing:4px;color:#d9d4c4}
+  html.touch #rotate-hint .rotate-icon{font-size:64px;color:#a83c31;animation:rot 2.4s ease-in-out infinite}
+  html.touch #rotate-hint p{margin:8px 0 0;font:600 22px Impact,'Arial Narrow',sans-serif}
+  html.touch #rotate-hint small{font-size:10px;color:#8f8b7b;letter-spacing:2px}
+}
+@keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(90deg)}}
+
+/* Camada de controles */
+#touch-ui{position:absolute;inset:0;z-index:3;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  --pad:max(14px,env(safe-area-inset-bottom));--side:max(18px,env(safe-area-inset-right));--u:min(1vw,1.8vh,8px)}
+#touch-ui.tc-hidden{display:none}
+#touch-ui [hidden]{display:none!important}
+.tc-stick{position:absolute;left:0;top:0;width:calc(var(--r,60px)*2);height:calc(var(--r,60px)*2);margin:calc(var(--r,60px)*-1) 0 0 calc(var(--r,60px)*-1);border-radius:50%;
+  border:1.5px solid #d8d4be66;background:radial-gradient(circle,#d8d4be12,#d8d4be06 70%);opacity:0;transition:opacity .12s;pointer-events:none}
+.tc-stick.on{opacity:1}
+.tc-knob{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:#d8d4be55;border:1.5px solid #e7e2c9aa;box-shadow:0 0 12px #0008}
+.tc-stick.run{border-color:#c9553f99}.tc-stick.run .tc-knob{background:#c9553f66;border-color:#e08a74}
+
+.tc-top{position:absolute;top:max(8px,env(safe-area-inset-top));right:var(--side);display:flex;gap:8px}
+.tc-chip{min-width:46px;height:36px;padding:0 12px;display:grid;place-items:center;border:1px solid #6a665555;border-radius:18px;background:#0b0c0a99;color:#cfc8aa;font-size:11px;letter-spacing:2px;backdrop-filter:blur(2px)}
+.tc-chip.down{background:#3a211dcc;border-color:#a95a4c}
+
+.tc-actions{position:absolute;right:var(--side);bottom:var(--pad);width:calc(var(--u)*46);height:calc(var(--u)*38);pointer-events:none}
+.tc-btn{position:absolute;display:grid;place-content:center;justify-items:center;border-radius:50%;border:1.5px solid #d8d4be55;background:#0b0c0a88;color:#e0dac8;
+  font-size:clamp(9px,calc(var(--u)*1.7),13px);letter-spacing:1.5px;text-align:center;pointer-events:auto;backdrop-filter:blur(2px);box-shadow:0 2px 14px #0006}
+.tc-btn small{font-size:.78em;letter-spacing:.5px;color:#cfc8aa;max-width:90%;line-height:1.15;margin-top:2px}
+.tc-btn.down{background:#963c31cc;border-color:#e08a74;transform:scale(.94)}
+.tc-fire{right:0;bottom:calc(var(--u)*3);width:calc(var(--u)*19);height:calc(var(--u)*19);background:#762c26b3;border-color:#c97a68aa;font-size:clamp(11px,calc(var(--u)*2.3),17px);letter-spacing:2px}
+.tc-fire.empty{background:#3a3a36b3;border-color:#77756a}
+.tc-aim{right:calc(var(--u)*21);bottom:calc(var(--u)*1);width:calc(var(--u)*13);height:calc(var(--u)*13)}
+.tc-aim.on{background:#3d5a46cc;border-color:#9cc6a0}
+.tc-reload{right:calc(var(--u)*17);bottom:calc(var(--u)*16);width:calc(var(--u)*11.5);height:calc(var(--u)*11.5)}
+.tc-use{right:calc(var(--u)*0);bottom:calc(var(--u)*23);width:calc(var(--u)*15);height:calc(var(--u)*15);background:#b9a46fcc;border-color:#f0e2b0;color:#11120f}
+.tc-use small{color:#2a2418}
+.tc-use.down{background:#e0c98aee}
+
+/* Inventário no celular */
+.inventory-close{display:none}
+html.touch .inventory-close{display:inline-block;padding:8px 14px;font-size:10px;letter-spacing:2px}
+html.touch .inventory-title{display:none}
+html.touch .inventory-window{height:100%}
+html.touch .inventory-action{padding:14px 12px;font-size:11px}
+html.touch .inventory-slot{min-height:44px}
+html.touch .inventory-hint{display:none}

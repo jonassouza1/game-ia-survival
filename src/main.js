@@ -15,7 +15,11 @@ import { createEnvironment } from './render/environment.js';
 import { createStorm } from './render/storm.js';
 import { createPostFX } from './render/postfx.js';
 import { resolveQuality, applyQuality, configureGroupShadows } from './render/quality.js';
+import { isTouchDevice } from './input/device.js';
+import { createTouchControls, getStoredSensitivity } from './input/touchControls.js';
 
+// Antes de medir o container: no celular o jogo ocupa a tela inteira (ver style.css).
+document.documentElement.classList.toggle('touch', isTouchDevice);
 const container = document.querySelector('#game');
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x14120d, 0.012);
@@ -88,6 +92,8 @@ let started = false;
 let hasPointerLock = false;
 let player;
 let interaction;
+let touchControls = null;
+let keepAwake = () => {};   // celular: impede a tela de apagar durante o jogo (precisa de HTTPS)
 const locationLabel = document.querySelector('.location');
 const sceneFade = document.createElement('div');
 sceneFade.id = 'scene-fade';
@@ -141,6 +147,7 @@ function switchScene(destination, spawn) {
   }, 180);
 }
 const requestPointerLock = () => {
+  if (isTouchDevice) return; // celular não tem pointer lock: a câmera é controlada pelo arrasto do dedo
   try { const request = renderer.domElement.requestPointerLock?.(); request?.catch?.(() => {}); } catch { /* mouse livre continua funcionando */ }
 };
 const inventory = createInventory({
@@ -151,6 +158,7 @@ const inventory = createInventory({
   },
   onToggle(open) {
     if (!player) return;
+    touchControls?.reset();
     player.setPaused(open);
     player.setActive(started && !open);
     if (open) {
@@ -181,6 +189,7 @@ function damagePlayer(amount) {
   if (health.dead) return;
   health.hp = Math.max(0, health.hp - amount);
   audio.playerHurt();
+  if (isTouchDevice) { try { navigator.vibrate?.(health.hp <= 0 ? [160, 60, 260] : 90); } catch { /* sem vibração */ } }
   damageFlash.classList.remove('hit'); void damageFlash.offsetWidth; damageFlash.classList.add('hit');
   renderHealth();
   if (health.hp <= 0) {
@@ -188,6 +197,7 @@ function damagePlayer(amount) {
     renderHealth();
     hasPointerLock = false;
     player.setActive(false);
+    touchControls?.hide();
     document.exitPointerLock?.();
     window.setTimeout(() => deathScreen.classList.add('show'), 900);
   }
@@ -220,6 +230,50 @@ interaction = createInteraction({
   onTransition: switchScene,
 });
 interaction.setItems(world.props);
+
+// ── Celular / tablet ──
+function pauseGame() {
+  if (!started || health.dead || inventory.isOpen) return;
+  player.setActive(false);
+  touchControls?.reset();
+  touchControls?.hide();
+  overlay.style.display = 'flex';
+  startButton.textContent = 'RETOMAR';
+}
+if (isTouchDevice) {
+  touchControls = createTouchControls({
+    container,
+    player,
+    actions: {
+      reload: () => inventory.reload(),
+      use: () => { interaction.use(); audio.interaction(); },
+      flash: () => player.toggleFlashlight(),
+      items: () => inventory.open(),
+      pause: pauseGame,
+    },
+  });
+  // Sensibilidade da câmera (tela inicial)
+  const sensButtons = [...document.querySelectorAll('[data-sens]')];
+  const markSens = (step) => sensButtons.forEach((b) => b.classList.toggle('active', b.dataset.sens === step));
+  markSens(getStoredSensitivity());
+  for (const button of sensButtons) {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      touchControls.setSensitivity(button.dataset.sens);
+      markSens(button.dataset.sens);
+    });
+  }
+  // Pausa sozinho se o jogador girar para retrato ou sair do navegador
+  window.matchMedia('(orientation: portrait)').addEventListener?.('change', (event) => { if (event.matches) pauseGame(); });
+  keepAwake = async () => {
+    try { await navigator.wakeLock?.request('screen'); } catch { /* sem wake lock */ }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseGame();
+    else if (started) keepAwake();
+  });
+}
+
 window.addEventListener('keydown', (e) => {
   if (inventory.isOpen) {
     if (['Escape', 'KeyI', 'Tab'].includes(e.code)) { e.preventDefault(); inventory.close(); }
@@ -245,6 +299,15 @@ startButton.addEventListener('click', () => {
   overlay.style.display = 'none';
   try { audio.start(); } catch (error) { console.warn('Áudio indisponível neste navegador:', error); }
   requestPointerLock();
+  if (touchControls && !health.dead) {
+    touchControls.show();
+    keepAwake();
+    // Tela cheia + paisagem (Android/iPad). No iPhone o Safari não permite: use "Adicionar à Tela de Início".
+    const enter = container.requestFullscreen?.bind(container) ?? container.webkitRequestFullscreen?.bind(container);
+    if (enter && !document.fullscreenElement && !document.webkitFullscreenElement) {
+      Promise.resolve(enter()).then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+    }
+  }
 });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === renderer.domElement) {
@@ -260,7 +323,7 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 renderer.domElement.addEventListener('click', () => {
-  if (started && !inventory.isOpen && document.pointerLockElement !== renderer.domElement) requestPointerLock();
+  if (!isTouchDevice && started && !inventory.isOpen && document.pointerLockElement !== renderer.domElement) requestPointerLock();
 });
 
 window.addEventListener('resize', () => {
@@ -275,6 +338,7 @@ window.addEventListener('resize', () => {
 window.__rpd = {
   THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality, storm,
   activeCollisions, hallWorld, streetWorld, hospitalWorld, enemies, health, damagePlayer,
+  touchControls, isTouchDevice,
   step: (dt = 1 / 60) => frame(dt),
 };
 
@@ -295,6 +359,10 @@ function frame(dt) {
   }
   const ammo = inventory.ammo;
   ammoHud.textContent = `${ammo.magazine} / ${ammo.reserve}`;
+  if (touchControls) {
+    touchControls.setUseTarget(interaction.target?.label ?? null);
+    touchControls.setAmmoEmpty(ammo.magazine <= 0);
+  }
   postfx.render(dt);
 }
 function animate() {

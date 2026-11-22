@@ -32,7 +32,7 @@ export function createInventory({ element, onToggle = () => {}, onReload = () =>
     const current = items.find((item) => item.id === selected) || items[0];
     element.innerHTML = `
       <section class="inventory-window" aria-label="Inventário">
-        <header class="inventory-header"><span>R.P.D. <b>ITEM BOX</b></span><span>R.P.D. TACTICAL</span></header>
+        <header class="inventory-header"><span>R.P.D. <b>ITEM BOX</b></span><span class="inventory-title">R.P.D. TACTICAL</span><button type="button" class="inventory-close" aria-label="Fechar inventário">FECHAR</button></header>
         <div class="inventory-content">
           <section class="inventory-left">
             <div class="inventory-label">INVENTÁRIO <small>03 / 12</small></div>
@@ -58,6 +58,7 @@ export function createInventory({ element, onToggle = () => {}, onReload = () =>
     element.querySelector('.inventory-action').addEventListener('click', () => {
       if (selected === 'ammo') reload();
     });
+    element.querySelector('.inventory-close').addEventListener('click', () => setOpen(false));
   }
 
   function setOpen(value) {

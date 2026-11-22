@@ -118,42 +118,89 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
     paused: false, recoil: 0, reloadTime: 0, gaitLean: 0,
   };
   const keys = {};
+  // 'fired' = atirou · 'empty' = carregador vazio (clique seco) · 'blocked' = ainda não pode (sacando, recarregando...)
   function shoot() {
-    if (!S.active || S.paused || !S.aiming || S.reloadTime > 0) return;
+    if (!S.active || S.paused || !S.aiming || S.reloadTime > 0) return 'blocked';
     const sidearm = model.skinned?.sidearm;
-    if (sidearm && (!sidearm.drawn || S.aimT < 0.8)) return; // ainda sacando a arma
-    if (!inventory?.consumeRound()) { audio?.emptyGun?.(); return; }
+    if (sidearm && (!sidearm.drawn || S.aimT < 0.8)) return 'blocked'; // ainda sacando a arma
+    if (!inventory?.consumeRound()) { audio?.emptyGun?.(); return 'empty'; }
     S.recoil = 1;
     model.muzzleTime = 0.075;
     if (model.muzzleFlash) model.muzzleFlash.visible = true;
     fireProjectile();
     audio?.gunshot?.();
+    return 'fired';
   }
+
+  // ── Entrada por toque (celular/tablet) ──
+  // Preenchida por src/input/touchControls.js. `moveX/moveY` vêm do joystick (−1…1, y<0 = frente).
+  const FIRE_INTERVAL = 0.42;   // segurar FOGO repete o tiro (pistola semiautomática)
+  const FIRE_QUEUE = 0.9;       // um toque rápido ainda atira quando a arma terminar de ser sacada
+  const AIM_LINGER = 0.7;       // mantém a mira erguida um instante depois do último tiro
+  const touch = {
+    moveX: 0, moveY: 0, run: false, aim: false,
+    fireHeld: false, fireQueue: 0, fireCooldown: 0, aimLinger: 0, dry: false,
+    setFire(down) {
+      if (down) { this.fireHeld = true; this.fireQueue = FIRE_QUEUE; this.dry = false; }
+      else { this.fireHeld = false; this.dry = false; }
+    },
+    get wantsAim() { return this.aim || this.fireHeld || this.fireQueue > 0 || this.aimLinger > 0; },
+    get driving() { return Math.hypot(this.moveX, this.moveY) > 0.01; },
+  };
+  let touchAimApplied = false;
+  function updateTouchActions(dt) {
+    if (S.paused || !S.active) {
+      if (touchAimApplied) { S.aiming = false; touchAimApplied = false; }
+      return;
+    }
+    touch.aimLinger = Math.max(0, touch.aimLinger - dt);
+    touch.fireCooldown = Math.max(0, touch.fireCooldown - dt);
+    if (!touch.fireHeld) touch.fireQueue = Math.max(0, touch.fireQueue - dt);
+    if (touch.wantsAim) { S.aiming = true; touchAimApplied = true; }
+    else if (touchAimApplied) { S.aiming = false; touchAimApplied = false; }
+    if ((touch.fireHeld || touch.fireQueue > 0) && touch.fireCooldown <= 0 && !touch.dry) {
+      const result = shoot();
+      if (result === 'fired') {
+        touch.fireCooldown = FIRE_INTERVAL;
+        touch.fireQueue = 0;
+        touch.aimLinger = AIM_LINGER;
+      } else if (result === 'empty') {
+        touch.dry = true;          // um clique seco por toque, sem metralhar o som
+        touch.fireQueue = 0;
+      }
+    }
+  }
+  function toggleFlashlight() { S.flash = !S.flash; audio?.toggleFlashlight(S.flash); return S.flash; }
 
   // ── Entrada ──
   const onKey = (e) => {
     keys[e.code] = e.type === 'keydown';
-    if (e.type === 'keydown' && e.code === 'KeyF' && !e.repeat) { S.flash = !S.flash; audio?.toggleFlashlight(S.flash); }
+    if (e.type === 'keydown' && e.code === 'KeyF' && !e.repeat) toggleFlashlight();
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   };
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; S.aiming = false; });
   dom.addEventListener('mousedown', (e) => {
+    if (e.sourceCapabilities?.firesTouchEvents) return; // "mouse" sintético de um toque: quem cuida é o touchControls
     if (e.button === 2 && !S.paused) S.aiming = true;
     if (e.button === 0) shoot();
   });
   window.addEventListener('mouseup', (e) => { if (e.button === 2) S.aiming = false; });
   window.addEventListener('contextmenu', (e) => e.preventDefault());
+  // `dx`/`dy` em radianos (já com a sensibilidade base de cada dispositivo). Mirando, a câmera fica mais lenta.
+  function look(dx, dy) {
+    const sensitivity = THREE.MathUtils.lerp(1, 0.55, S.aimT);
+    S.yaw -= dx * sensitivity;
+    S.pitch = clamp(S.pitch - dy * sensitivity, CAM.pitchMin, CAM.pitchMax);
+  }
   document.addEventListener('mousemove', (e) => {
     if (!S.active) return;
     if (document.pointerLockElement !== dom) {
       const bounds = dom.getBoundingClientRect();
       if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) return;
     }
-    const sensitivity = THREE.MathUtils.lerp(1, 0.55, S.aimT);
-    S.yaw -= e.movementX * 0.0022 * sensitivity;
-    S.pitch = clamp(S.pitch - e.movementY * 0.002 * sensitivity, CAM.pitchMin, CAM.pitchMax);
+    look(e.movementX * 0.0022, e.movementY * 0.002);
   });
   // Lanterna presa ao colete
   const flash = new THREE.SpotLight(0xfff0d0, 62, 22, 0.5, 0.68, 2);
@@ -311,8 +358,11 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
       S.aimT += (0 - S.aimT) * Math.min(1, dt * 14);
       return;
     }
-    const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
-    const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    let f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+    let s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    // Joystick virtual: só vale quando o teclado está parado. O joystick usa y<0 = frente.
+    const stick = f === 0 && s === 0 && touch.driving;
+    if (stick) { f = -touch.moveY; s = touch.moveX; }
     const fx = Math.sin(S.yaw), fz = Math.cos(S.yaw), rx = -Math.cos(S.yaw), rz = Math.sin(S.yaw);
     let wx = fx * f + rx * s, wz = fz * f + rz * s;
     const len = Math.hypot(wx, wz);
@@ -320,6 +370,11 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
     const sprinting = !S.aiming && (keys.ShiftLeft || keys.ShiftRight);
     const walking = !S.aiming && keys.KeyC;
     let max = S.aiming ? SPEED.aim : (walking ? SPEED.walk : (sprinting ? SPEED.run : SPEED.jog));
+    if (stick && !S.aiming) {
+      // Analógico: joystick no meio = andar, quase todo = trotar, além do anel = correr.
+      const mag = Math.hypot(touch.moveX, touch.moveY);
+      max = touch.run ? SPEED.run : THREE.MathUtils.lerp(SPEED.walk, SPEED.jog, clamp((mag - 0.35) / 0.5, 0, 1));
+    }
     if (S.aiming && f < 0) max *= 0.8;
     const hasInput = len > 0;
     const targetX = wx * max * (hasInput ? 1 : 0);
@@ -433,6 +488,7 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
   }
 
   function update(dt) {
+    updateTouchActions(dt);
     updateMovement(dt);
     animateModel(dt);
     updateShots(dt);
@@ -443,6 +499,7 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
 
   return {
     state: S, update,
+    touch, look, toggleFlashlight,
     aimScreenPosition,
     setShotHandler(fn) { shotHandler = fn; },
     setShotProbe(fn) { shotProbe = fn; },

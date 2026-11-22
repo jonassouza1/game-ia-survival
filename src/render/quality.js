@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isTouchDevice } from '../input/device.js';
 
 /**
  * Presets de qualidade gráfica.
@@ -66,6 +67,10 @@ export function resolveQuality(renderer) {
     const stored = window.localStorage.getItem('rpd-quality');
     if (PRESETS[stored]) return PRESETS[stored];
   } catch { /* localStorage bloqueado: segue a detecção */ }
+
+  // Celular/tablet: as GPUs móveis não aguentam GTAO + MSAA + resolução nativa. Começa leve
+  // (sem pós-processamento, 1 pixel por pixel CSS) e o jogador pode subir na tela inicial.
+  if (isTouchDevice) return { ...PRESETS.low, pixelRatio: 1 };
 
   const gpu = detectGPU(renderer);
   if (/swiftshader|llvmpipe|software|basic render/i.test(gpu)) return PRESETS.low;

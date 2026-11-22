@@ -40,6 +40,8 @@ export function createInteraction({ promptEl, toastEl, addAmmo = () => {}, onTra
     setItems(nextItems) { items.splice(0, items.length, ...nextItems); current = null; promptEl.classList.remove('show'); },
     update,
     use() { if (current) current.onUse(ctx); },
+    /** Objeto interativo atual (ou null) — o botão USAR do celular lê o rótulo daqui. */
+    get target() { return current; },
     toast,
   };
 }
