@@ -1,0 +1,26 @@
+Como o leão (public/models/lion/lion_statue.glb) foi gerado a partir de lion_statue_scan.glb
+==========================================================================================
+Original: varredura com 354.028 triângulos, textura 4096² e material KHR_materials_unlit (32 MB).
+Resultado: 53.104 triângulos, textura 2048², material PBR iluminado (3,4 MB).
+
+Dependências (fora do projeto do jogo, para não pesar o package.json):
+  npm install --no-save @gltf-transform/core @gltf-transform/extensions @gltf-transform/functions meshoptimizer
+  pip install trimesh numpy pillow scipy
+
+Passos (coloque lion_statue_scan.glb nesta pasta):
+  1) node bake.mjs                          → baked.glb   (aplica as transformações dos nós nos vértices e junta tudo)
+  2) python3 prep_texture.py                → lion_tex_2048.jpg
+  3) node optimize.mjs 0.15 8 lion_statue.glb
+        0.15 = fração de triângulos mantida · 8 = peso da UV na simplificação · saída
+  4) copie lion_statue.glb para public/models/lion/
+
+O que o optimize.mjs faz:
+  • gira ~5,85° em Y (o corpo vinha torto; o valor 0.1025 é específico DESTE modelo — meça de novo se trocar o asset);
+  • centraliza em x/z e põe as patas em y = 0;
+  • simplifica com meshoptimizer no modo 'Permissive'. Necessário porque o atlas é fragmentado (cada vértice
+    duplicado ~4x nas costuras de UV) e o modo padrão não consegue colapsar nada; o peso de UV evita distorção;
+  • remove KHR_materials_unlit (que ignoraria as luzes do saguão) e define PBR: metalness 0, roughness 0.86;
+  • troca a textura pela versão de 2048².
+
+No jogo: src/world/policeStation.js, bloco "Leão sobre pedestal" → decor.place('/models/lion/lion_statue.glb', {...}).
+`height` (1.45 m) e `tint` (0.86, multiplicador de cor em espaço linear) podem ser ajustados ali.

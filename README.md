@@ -50,6 +50,14 @@ npm run preview
 - **Presets de qualidade** automáticos (alto/médio/baixo), com seletor na tela
   inicial.
 
+## Estátua do leão (saguão)
+
+O leão sobre o pedestal do saguão é um modelo escaneado (`public/models/lion/lion_statue.glb`,
+53 mil triângulos, textura 2048²), colocado por `decor.place(...)` em `src/world/policeStation.js`;
+pedestal, placa com o emblema e colisão continuam procedurais. O arquivo original (354 mil triângulos,
+32 MB) foi otimizado para rodar também em celular — o passo a passo está em `tools/lion/LEIA-ME.txt`.
+Créditos/licença do modelo: `public/models/lion/CREDITS.txt`.
+
 ## Qualidade gráfica
 
 O renderer mede a GPU e escolhe um preset:
@@ -160,6 +168,7 @@ src/
     touchControls.js      joystick, olhar por arrasto e botões de ação
 tools/
   fetch-assets.mjs        download dos assets CC0 e do personagem Mixamo
+  lion/                   pipeline que otimizou o GLB do leão (bake, textura, simplificação)
   write-credits.mjs       geração dos créditos
 ```
 

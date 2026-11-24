@@ -1,0 +1,5 @@
+lion_statue.glb — estátua de leão (varredura 3D)
+Origem: arquivo fornecido pelo autor do projeto (lion_statue_scan.glb, exportado do Sketchfab).
+Licença: CONFERIR na página original do modelo e, se exigir atribuição, registrar autor/link aqui.
+Modificações: giro corrigido em Y, recentralização, simplificação de malha (354 mil → 53 mil triângulos),
+material convertido de unlit para PBR e textura reduzida para 2048². Ver tools/lion/LEIA-ME.txt.

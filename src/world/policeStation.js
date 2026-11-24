@@ -55,7 +55,6 @@ export function buildPoliceStation(scene) {
     dark: solid({ color: 0x040505, roughness: 0.9 }),
     stone: pbr('granite_tile', { tile: 3, color: 0xc8c4b8, roughness: 0.9, normalScale: 0.7 }),
     statue: pbr('marble_01', { tile: 2.4, color: 0xd9d3c5, roughness: 0.72, normalScale: 0.5 }),
-    lion: pbr('marble_01', { tile: 2, color: 0xc9c1ad, roughness: 0.8, normalScale: 0.6 }),
     greenDoor: pbr('wooden_panels', { tile: 2.4, color: 0x96af9c, roughness: 0.9, normalScale: 0.8 }),
     ceil: pbr('white_plaster_02', { tile: 4, color: 0xc9c1b0, roughness: 1, normalScale: 0.6 }),
     carpet: pbr('quatrefoil_jacquard_fabric', { tile: 3, color: 0xb06153, roughness: 1, normalScale: 0.7 }),
@@ -588,7 +587,7 @@ export function buildPoliceStation(scene) {
     planter(sx * 11.0, 13.5, gy, 1.15);
   }
 
-  // Leão sobre pedestal ornamentado, com juba, face, patas e cauda esculpidas.
+  // Leão sobre pedestal ornamentado (o leão em si é o modelo escaneado de /models/lion).
   {
     const z = -14.6, y = gy;
     box(2.35, 0.28, 1.65, M.stone, 0, y + 0.14, z, D0);
@@ -603,43 +602,17 @@ export function buildPoliceStation(scene) {
     lionPlaque.name = 'RPDLionStatuePlaque';
     scene.add(lionPlaque);
 
-    oval(0.72, 0.45, 0.82, M.lion, 0, y + 1.43, z - 0.08, 10, 7);
-    oval(0.64, 0.66, 0.49, M.lion, 0, y + 1.88, z + 0.29, 10, 7);
-    oval(0.42, 0.42, 0.39, M.lion, 0, y + 2.06, z + 0.55, 9, 7);
-    for (let i = 0; i < 11; i++) {
-      const a = (i / 11) * Math.PI * 2;
-      const tuft = new THREE.SphereGeometry(1, 6, 5);
-      tuft.scale(0.17, 0.25, 0.18);
-      b.geo(tuft, M.lion, Math.cos(a) * 0.46, y + 1.88 + Math.sin(a) * 0.49,
-        z + 0.43 + Math.max(0, Math.sin(a)) * 0.1, { ...D0, rz: -Math.cos(a) * 0.42 });
-    }
-    oval(0.32, 0.27, 0.3, M.lion, 0, y + 2.03, z + 0.78, 9, 6);
-    for (const sx of [-1, 1]) {
-      oval(0.2, 0.14, 0.17, M.stone, sx * 0.13, y + 1.98, z + 0.88, 7, 5);
-      oval(0.07, 0.055, 0.04, M.black, sx * 0.16, y + 2.15, z + 0.85, 6, 4);
-      oval(0.13, 0.055, 0.09, M.lion, sx * 0.16, y + 2.22, z + 0.8, 6, 4);
-    }
-    oval(0.12, 0.085, 0.08, M.black, 0, y + 2.08, z + 1.03, 6, 4);
-    box(0.035, 0.1, 0.025, M.black, 0, y + 1.88, z + 1.01, D0);
-    for (const sx of [-1, 1]) {
-      oval(0.14, 0.17, 0.12, M.lion, sx * 0.31, y + 2.34, z + 0.41, 6, 5);
-      const frontLeg = new THREE.CylinderGeometry(0.18, 0.22, 0.7, 7, 2);
-      b.geo(frontLeg, M.lion, sx * 0.37, y + 1.22, z + 0.42, D0);
-      oval(0.22, 0.15, 0.28, M.lion, sx * 0.37, y + 0.85, z + 0.55, 7, 5);
-      for (let claw = -1; claw <= 1; claw++) box(0.025, 0.025, 0.13, M.trim,
-        sx * 0.37 + claw * 0.09, y + 0.79, z + 0.76, D0);
-      const rearLeg = new THREE.CylinderGeometry(0.2, 0.24, 0.62, 7, 2);
-      b.geo(rearLeg, M.lion, sx * 0.44, y + 1.13, z - 0.43, D0);
-      oval(0.25, 0.23, 0.3, M.lion, sx * 0.44, y + 0.92, z - 0.48, 7, 5);
-      oval(0.2, 0.14, 0.24, M.lion, sx * 0.44, y + 0.82, z - 0.29, 7, 5);
-    }
-    const tailPath = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.46, y + 1.27, z - 0.58),
-      new THREE.Vector3(0.70, y + 1.33, z - 0.75),
-      new THREE.Vector3(0.72, y + 1.70, z - 0.78),
-      new THREE.Vector3(0.57, y + 1.83, z - 0.74),
-    ]);
-    b.geo(new THREE.TubeGeometry(tailPath, 10, 0.07, 6, false), M.lion, 0, 0, 0, D0);
+    // Leão de pedra escaneado (GLB próprio, ~53 mil triângulos, otimizado de uma varredura de 354 mil)
+    // no lugar da escultura procedural. A origem do modelo já está na base; `place` centraliza a
+    // caixa envolvente em x/z e apoia as patas no topo da laje (gy + 1.10, afundando 5 mm para não
+    // deixar fresta). 1.45 m de altura cabe exatamente na laje (2.05 × 1.36 m) e iguala a altura do leão antigo.
+    decor.place('/models/lion/lion_statue.glb', {
+      position: [0, y + 1.095, z],
+      height: 1.45,
+      rotationY: 0,
+      tint: 0.86,
+      name: 'RPDLionStatue',
+    });
     col.addBox(0, z, 2.1, 1.4, { y0: 4.0 });
   }
 
