@@ -26,9 +26,9 @@ const LOCATIONS = {
     environment: 'cobblestone_street_night',
     intensity: 0.26,
     flashEnv: 1.1,
-    background: 'qwantani_night_puresky',
-    backgroundIntensity: 0.055,
-    flashBg: 0.5,
+    // Sem HDRI de fundo: ele trazia estrelas, que não combinam com a tempestade. O céu é a cúpula de
+    // nuvens do storm.js (agora opaca) sobre esta cor de fundo.
+    background: null,
     backgroundColor: 0x03070b,
   },
 };
@@ -93,7 +93,6 @@ export function createEnvironment(renderer, scene) {
   // Começa carregando os dois ambientes e o céu para evitar atraso na troca.
   load(LOCATIONS.hall.environment);
   load(LOCATIONS.street.environment);
-  load(LOCATIONS.street.background);
   apply('hall');
 
   return { apply, setFlash, get location() { return location; } };

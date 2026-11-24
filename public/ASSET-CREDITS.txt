@@ -30,7 +30,6 @@ Texturas PBR (albedo + normal + ARM/oclusão-rugosidade-metal):
 HDRIs (iluminação indireta, reflexos e céu):
 - abandoned_hall_01
 - cobblestone_street_night
-- qwantani_night_puresky
 
 Modelos 3D (props de cenário):
 - GreenChair_01

@@ -64,8 +64,9 @@ const CLOUD_FRAG = /* glsl */`
     float light = uFlash * (0.18 + 0.82 * near) * (0.35 + 0.65 * detail);
     col += vec3(0.62, 0.72, 1.0) * light * 1.25;
 
-    float alpha = cover * fade * 0.9;
-    alpha = clamp(alpha + uFlash * 0.45 * near * smoothstep(0.25, 0.7, dens) * fade, 0.0, 0.97);
+    // Céu sempre encoberto (sem estrelas): os vãos entre nuvens ficam escuros, mas opacos.
+    float alpha = fade * (0.9 + 0.08 * cover);
+    alpha = clamp(alpha + uFlash * 0.45 * near * smoothstep(0.25, 0.7, dens) * fade, 0.0, 0.99);
     gl_FragColor = vec4(col, alpha);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>

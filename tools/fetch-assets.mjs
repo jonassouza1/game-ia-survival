@@ -50,7 +50,6 @@ const TEXTURES = [
 const HDRIS = [
   'abandoned_hall_01',         // ambiente do saguão
   'cobblestone_street_night',  // ambiente da rua
-  'qwantani_night_puresky',    // céu noturno da rua
 ];
 
 // Modelos CC0 (glTF 1k com texturas). `height` em metros só documenta a escala

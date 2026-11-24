@@ -51,7 +51,13 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   // lateral (z = 71) e o beco seguinte (z = 78) ficavam dentro delas. Agora o prédio vira um "anexo" que recua e
   // encosta na lateral do hospital, e o beco que sobrava dentro da ala deixa de existir.
   const HOSPITAL_FLANK_X = 14.75;     // face interna do anexo (a ala do hospital termina em ±14,23)
-  const HOSPITAL_ANNEX_Z = 66.05;     // face frontal do anexo: alinhada à parede do beco de z = 64
+  const HOSPITAL_ANNEX_Z = 66.05;     // face frontal do anexo (no layout antigo, alinhada à parede do beco de z = 64)
+  // Becos que sobraram entre os prédios novos (centro em z, por lado). Cada um tem 3,9 m de largura.
+  const ALLEY_Z = { '-1': [3.1, 22.2, 63.2], '1': [2.3, 30.7] };
+  // Rua transversal (oeste) que liga a rua principal ao bairro pós-guerra. O vão de 7,3 m coincide
+  // com a abertura natural na muralha leste do cenário (postwar.glb).
+  const CROSS = { z0: 38.65, z1: 45.95, zc: 42.3, xEnd: -48.8 };
+  const DISTRICT = { tx: -63.9, tz: 68.75 };   // deslocamento do postwar.glb para o mundo da rua
   const rpdSign = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -174,7 +180,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   let pendingHospitalTransition = null;
   let hospitalDoorItem = null;
   const hospitalDoorLeaves = [];
-  const loadStreetModel = (asset, { height, position, rotationY = 0, tint = 1 }, onLoad = () => {}) => {
+  const loadStreetModel = (asset, { height, scale, position, rotationY = 0, tint = 1, occlude = true, rough = 0.9 }, onLoad = () => {}) => {
     modelLoader.load(asset, ({ scene: model }) => {
       model.rotation.y = rotationY;
       model.updateMatrixWorld(true);
@@ -184,7 +190,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
         console.error(`O modelo ${asset} tem dimensoes invalidas.`);
         return;
       }
-      model.scale.setScalar(height / size.y);
+      model.scale.setScalar(height ? height / size.y : scale);
       model.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(model);
       const center = bounds.getCenter(new THREE.Vector3());
@@ -196,7 +202,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
         const tintMaterial = (material) => {
           const copy = material.clone();
           if (copy.color) copy.color.multiplyScalar(tint);
-          if ('roughness' in copy) copy.roughness = Math.max(copy.roughness, 0.9);
+          if ('roughness' in copy) copy.roughness = Math.max(copy.roughness, rough);
           return copy;
         };
         object.material = Array.isArray(object.material)
@@ -204,16 +210,26 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
           : tintMaterial(object.material);
       });
       group.add(model);
-      model.traverse((object) => { if (object.isMesh) occluders.push(object); });
+      if (occlude) model.traverse((object) => { if (object.isMesh) occluders.push(object); });
       onLoad(model);
     }, undefined, (error) => {
       console.error(`Nao foi possivel carregar o asset ${asset}:`, error);
-      if (asset.includes('broken_car')) car.visible = true;
+      if (asset.includes('car_burnt')) car.visible = true;
     });
   };
   const streetLights = [];
   const flickeringStoreLights = [];
   const alleyLights = [];
+
+  // Colisão + proxy de raycast (câmera/tiros) para os prédios novos: os GLB são pesados demais para raycast por malha.
+  const collisions = new CollisionWorld();
+  const registerSolid = (cx, cz, w, d, h, y0 = 0) => {
+    collisions.addBox(cx, cz, w, d, { y0, y1: y0 + h });
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial());
+    proxy.position.set(cx, y0 + h / 2, cz);
+    proxy.updateMatrixWorld(true);
+    occluders.push(proxy);
+  };
 
   box(24, 0.35, 90, materials.asphalt, 0, -0.18, 35);
   box(3.2, 0.35, 90, materials.concrete, -13.1, -0.15, 35);
@@ -241,51 +257,57 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     stripe.position.set(x, 0.004, -4.1);
     group.add(stripe);
   }
-  for (const side of [-1, 1]) {
-    for (const [index, z] of [1, 15, 29, 43, 57, 71].entries()) {
-      const asset = ['large_building_a', 'large_building_b', 'big_building'][index % 3];
-      const annex = useHospitalBuilding && index === 5;
-      loadStreetModel(`/models/${asset}/${asset}.glb`, {
-        height: index % 3 === 2 ? 10.5 : 9.2,
-        position: { x: side * 15.1, y: 0, z },
-        rotationY: -side * Math.PI / 2,
-        tint: index % 3 === 2 ? 0.35 : 0.48,
-      }, annex ? (model) => {
-        // Anexo do hospital: encosta a face interna na lateral da ala e a frente no beco anterior.
-        const bounds = new THREE.Box3().setFromObject(model);
-        model.position.x += side > 0 ? HOSPITAL_FLANK_X - bounds.min.x : -HOSPITAL_FLANK_X - bounds.max.x;
-        model.position.z += HOSPITAL_ANNEX_Z - bounds.min.z;
-        model.updateMatrixWorld(true);
-      } : undefined);
-      if (index % 2 === 0) {
-        const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.72), materials.storefrontSign);
-        sign.position.set(side * 10.9, 5.2, z);
-        sign.rotation.y = -side * Math.PI / 2;
-        group.add(sign);
-        box(0.42, 0.16, 3.1, materials.rust, side * 10.8, 2.85, z);
-        box(0.34, 0.12, 2.6, materials.wood, side * 10.52, 2.62, z);
-        const intensity = index === 0 ? 22 : 0;
-        const fixture = streetLightPool.add({
-          position: new THREE.Vector3(side * 10.45, 3.3, z),
-          color: 0xffa65e, intensity, distance: 8, decay: 2,
-        });
-        if (intensity > 0) flickeringStoreLights.push({ fixture, base: intensity, seed: z + side * 11 });
-      }
-    }
+  // ── Prédios (assets novos) ────────────────────────────────────────────────
+  // city_block: bloco de 4 andares (~24,5 m de frente × 10,6 m de fundo × 13 m); o pórtico rosa avança ~1,75 m
+  // sobre a calçada. tower: torre de concreto (~10,5 × 14,4 m na planta, 25 m de altura), fachada de janelas em +x.
+  const CITY_SCALE = 0.02395;
+  const TOWER_SCALE = 3;
+  const placeCity = (side, zc) => {
+    loadStreetModel('/models/street/city_block.glb', {
+      scale: CITY_SCALE, position: { x: side * 19.1, y: 0, z: zc }, rotationY: side * Math.PI / 2, tint: 0.66, occlude: false,
+    });
+    registerSolid(side * 20.0, zc, 10.6, 24.5, 13);
+    const fixture = streetLightPool.add({
+      position: new THREE.Vector3(side * 12.9, 3.4, zc - side * 2.6),   // sobre o pórtico de entrada
+      color: 0xffa65e, intensity: 18, distance: 8, decay: 2,
+    });
+    flickeringStoreLights.push({ fixture, base: 18, seed: zc + side * 11 });
+  };
+  const placeTower = (side, zc, tint = 0.72) => {
+    const cx = side * (14.9 + 5.25);
+    loadStreetModel('/models/street/tower.glb', {
+      scale: TOWER_SCALE, position: { x: cx, y: 0, z: zc }, rotationY: side > 0 ? Math.PI : 0, tint, occlude: false,
+    });
+    registerSolid(cx, zc, 10.5, 14.4, 25.4);
+  };
+  const closeGap = (side, z0, z1) => {     // fresta entre um beco e o prédio vizinho
+    const length = z1 - z0;
+    if (length < 0.05) return;
+    box(2.4, 9, length, materials.brickSoot, side * 15.9, 4.5, (z0 + z1) / 2);
+    registerSolid(side * 15.9, (z0 + z1) / 2, 2.4, length, 9);
+  };
+  // Esquerda: três torres, becos entre elas e, em z ≈ 42, a rua transversal para o bairro.
+  placeTower(-1, 13.05);
+  placeTower(-1, 31.45);
+  placeTower(-1, 53.15);
+  closeGap(-1, 0.35, 1.15); closeGap(-1, 5.05, 5.85);
+  closeGap(-1, 60.35, 61.25); closeGap(-1, 65.15, HOSPITAL_ANNEX_Z);
+  // Direita: bloco, beco, garagem (dá para entrar), bloco.
+  placeCity(1, 16.5);
+  placeCity(1, 53.75);
+  closeGap(1, 32.65, 33.15); closeGap(1, 40.85, 41.5);
+  // Anexo do hospital: uma torre encostada na lateral da ala, em cada lado.
+  if (useHospitalBuilding) {
+    for (const side of [-1, 1]) placeTower(side, HOSPITAL_ANNEX_Z + 7.2, 0.6);
   }
 
-  // Skyline real: reutiliza os prédios CC0 em escala maior no fundo da rua,
-  // em vez de silhuetas pintadas num plano.
-  for (const [index, [x, z, height]] of [
-    [-44, 96, 26], [-27, 92, 33], [-10, 99, 23],
-    [8, 94, 36], [26, 97, 28], [44, 93, 22],
-  ].entries()) {
-    const asset = ['large_building_a', 'large_building_b', 'big_building'][index % 3];
-    loadStreetModel(`/models/${asset}/${asset}.glb`, {
-      height,
-      position: { x, y: 0, z },
-      rotationY: Math.PI,
-      tint: 0.18,
+  // Skyline: torres e blocos nos fundos da rua, bem escuros por causa da névoa.
+  for (const [kind, x, z, height] of [
+    ['city', -46, 96, 17], ['tower', -26, 92, 33], ['tower', -8, 99, 26],
+    ['tower', 10, 94, 36], ['tower', 28, 97, 29], ['city', 50, 93, 17],
+  ]) {
+    loadStreetModel(`/models/street/${kind === 'city' ? 'city_block' : 'tower'}.glb`, {
+      height, position: { x, y: 0, z }, rotationY: kind === 'city' ? Math.PI : 0, tint: 0.2, occlude: false,
     });
   }
 
@@ -296,18 +318,9 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   const alleyPaving = [0x948f82, 0x706d65, 0x4c4941].map((color) =>
     pbr('concrete_pavement', { tile: 2, color, roughness: 1, normalScale: 0.8 }));
   for (const side of [-1, 1]) {
-    for (const [index, z] of [8, 22, 36, 50, 64, 78].entries()) {
-      // O beco de z = 78 cairia dentro da ala do hospital. Ele é montado normalmente (para o gerador aleatório
-      // seguir a mesma sequência de antes e o resto da rua não mudar) e depois descartado.
-      const discardAlley = useHospitalBuilding && index === 5
-        ? { children: group.children.length, boxes: staticBoxes.length, lights: alleyLights.length, fixtures: streetLightPool.fixtures.length }
-        : null;
+    for (const [index, z] of ALLEY_Z[side].entries()) {
       const alleyFace = alleyWallVariants[(index + (side > 0 ? 1 : 0)) % alleyWallVariants.length];
-      box(6.7, 0.06, 14.4, materials.asphalt, side * 14.35, 0.02, z);
-      for (const wallOffset of [-4.6, 4.6]) {
-        box(0.55, 10.8, 5.2, alleyFace, side * 17.8, 5.35, z + wallOffset);
-      }
-      box(0.42, 0.18, 14.8, materials.trim, side * 17.45, 10.62, z);
+      box(6.7, 0.06, 4.4, materials.asphalt, side * 14.35, 0.02, z);
       box(5.9, 0.08, 4.0, alleyPaving[0], side * 14.3, 0.045, z);
       box(4.0, 0.06, 3.7, alleyPaving[1], side * 15.2, 0.09, z);
       box(2.0, 0.04, 3.4, alleyPaving[2], side * 16.3, 0.12, z);
@@ -319,12 +332,6 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       box(0.22, 8.0, 2.4, alleyFace, side * 17.0, 4.0, z + side * 1.2);
       box(0.18, 3.4, 0.18, alleyMetal, side * 11.05, 1.7, z - 2.45);
       box(0.18, 3.4, 0.18, alleyMetal, side * 11.05, 1.7, z + 2.45);
-
-      for (const windowZ of [z - 5.0, z + 5.0]) {
-        box(0.08, 1.85, 1.5, materials.trim, side * 17.48, 4.15, windowZ);
-        box(0.035, 1.45, 1.12, materials.glass, side * 17.425, 4.15, windowZ);
-        box(0.1, 0.08, 1.65, materials.rust, side * 17.4, 3.18, windowZ);
-      }
 
       const corridorX = side * 22.7;
       box(10.0, 0.06, 3.65, alleyPaving[index % alleyPaving.length], corridorX, 0.02, z);
@@ -375,12 +382,6 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
           group.add(bag);
         }
       }
-
-      const drainpipe = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 5.8, 6), alleyMetal);
-      drainpipe.position.set(side * 17.4, 3.0, z - 5.7);
-      group.add(drainpipe);
-      box(1.8, 0.12, 0.12, alleyMetal, side * 16.2, 5.4, z - 2.8);
-      box(0.12, 1.2, 0.12, alleyMetal, side * 16.2, 4.8, z - 2.8);
 
       if (index % 2 === 1) {
         const landingX = side * 16.25;
@@ -459,12 +460,6 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
         bag.rotation.y = streetRandom() * Math.PI;
         group.add(bag);
       }
-      if (discardAlley) {
-        group.children.slice(discardAlley.children).forEach((object) => group.remove(object));
-        staticBoxes.splice(discardAlley.boxes);
-        alleyLights.splice(discardAlley.lights);
-        streetLightPool.fixtures.splice(discardAlley.fixtures);
-      }
     }
   }
 
@@ -542,9 +537,9 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   for (const [step, width] of [[0, 5.3], [1, 6.2], [2, 7.1]]) {
     box(width, 0.14, 0.62, materials.concrete, 0, 0.09 + step * 0.14, -8.7 + step * 0.62);
   }
-  for (const [asset, x] of [['large_building_a', -15.0], ['large_building_b', 15.0]]) {
-    loadStreetModel(`/models/${asset}/${asset}.glb`, {
-      height: 11.5, position: { x, y: 0, z: -13 }, rotationY: x < 0 ? Math.PI / 2 : -Math.PI / 2, tint: 0.42,
+  for (const side of [-1, 1]) {
+    loadStreetModel('/models/street/tower.glb', {
+      scale: 2.2, position: { x: side * 19.0, y: 0, z: -13 }, rotationY: side > 0 ? Math.PI : 0, tint: 0.5, occlude: false,
     });
   }
 
@@ -674,12 +669,12 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     return map;
   })();
   const embers = [];
-  const addWreck = (asset, position, rotationY, height, tint) => {
-    loadStreetModel(asset, { height, position, rotationY, tint }, () => {
-      if (asset.includes('broken_car')) {
+  const addWreck = (asset, position, rotationY, height, tint, fireYaw = rotationY) => {
+    loadStreetModel(asset, { height, position, rotationY, tint, rough: 0.82 }, () => {
+      if (asset.includes('car_burnt')) {
         car.visible = false;
         fire.position.set(position.x, 0, position.z);
-        fire.rotation.y = rotationY;
+        fire.rotation.y = fireYaw;
         fire.visible = true;
       }
     });
@@ -716,7 +711,8 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     console.error('Nao foi possivel carregar o modelo CC0 do carro coberto:', error);
     car.visible = true;
   });
-  addWreck('/models/broken_car/broken_car.glb', { x: -3.2, y: 0, z: 9.3 }, -0.52, 1.9, 0.52);
+  // Carro escaneado, queimado (a frente aponta para -z, como o antigo); o fogo continua por cima.
+  addWreck('/models/street/car_burnt.glb', { x: -3.2, y: 0, z: 9.3 }, -0.52 + Math.PI / 2, 1.28, 0.9, -0.52);
   addWreck('/models/police_car/police_car.glb', { x: 6.7, y: 0, z: 30 }, Math.PI * 0.57, 2.0, 0.48);
   box(0.48, 0.11, 0.4, materials.rust, 5.9, 0.12, 31.7);
   box(0.68, 0.12, 0.32, materials.metal, 7.8, 0.1, 28.5);
@@ -911,13 +907,11 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     }
   }
 
-  const collisions = new CollisionWorld();
   collisions.addFloor({ minX: -14.6, maxX: 14.6, minZ: -9.7, maxZ: 74.8, y: 0 });
   collisions.addBox(0, 75.2, 30, 0.5);
   collisions.addBox(0, -9.75, 10.4, 0.6);
   for (const side of [-1, 1]) {
-    for (const [index, z] of [8, 22, 36, 50, 64, 78].entries()) {
-      if (useHospitalBuilding && index === 5) continue;      // beco removido (ver HOSPITAL_FLANK_X)
+    for (const [index, z] of ALLEY_Z[side].entries()) {
       collisions.addFloor({
         minX: side > 0 ? 14.5 : -27.45,
         maxX: side > 0 ? 27.45 : -14.5,
@@ -927,9 +921,6 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       });
       for (const wallZ of [z - 1.95, z + 1.95]) {
         collisions.addBox(side * 14.25, wallZ, 5.8, 0.2, { y0: 0, y1: 8 });
-      }
-      for (const wallOffset of [-4.6, 4.6]) {
-        collisions.addBox(side * 17.8, z + wallOffset, 0.55, 5.2, { y0: 0, y1: 10.8 });
       }
       collisions.addBox(side * 17.0, z + side * 1.2, 0.22, 2.4, { y0: 0, y1: 8 });
       for (const wallSide of [-1, 1]) {
@@ -946,7 +937,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       }
     }
   }
-  collisions.addBox(-3.2, 9.3, 4.8, 3.8, { y0: 0, y1: 2.2 });
+  collisions.addBox(-3.2, 9.3, 3.0, 4.6, { y0: 0, y1: 1.9 });
   collisions.addBox(6.7, 30, 3.2, 4.2, { y0: 0, y1: 2.2 });
   collisions.addBox(-7.3, 50, 3.5, 4.6, { y0: 0, y1: 2.2 });
   collisions.addBox(1.0, 5.2, 1.3, 0.8, { y0: 0, y1: 0.24 });
@@ -1076,6 +1067,123 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     collider: { w: 0.65, d: 0.65, h: 1.1 },
   });
 
+  // ═══ Garagem abandonada (dá para entrar), rua transversal e bairro pós-guerra ═══════════════════════
+  // Garagem: a parede do lado +x do modelo desabou (vão de ~3 m); ela é virada para a rua. O interior é real
+  // (piso, vigas, tubulações), então basta liberar o piso e levantar as paredes como colisão.
+  const GARAGE_Z = 37;
+  const garageState = { ammo: false };
+  loadStreetModel('/models/street/garage.glb', {
+    scale: 1.85, position: { x: 20.7, y: 0, z: GARAGE_Z }, rotationY: Math.PI, tint: 0.85, occlude: false, rough: 0.8,
+  }, (model) => {
+    model.updateMatrixWorld(true);
+    const to = (nx, nz) => model.localToWorld(new THREE.Vector3(nx, 0, nz));
+    const wall = (nx0, nx1, nz0, nz1, h = 4.3, y0 = 0) => {
+      const a = to(nx0, nz0), b = to(nx1, nz1);
+      registerSolid((a.x + b.x) / 2, (a.z + b.z) / 2, Math.abs(a.x - b.x), Math.abs(a.z - b.z), h, y0);
+    };
+    wall(-3.25, -2.85, -2.05, 2.05);     // fundo
+    wall(-3.25, 3.25, -2.05, -1.7);      // parede das janelas
+    wall(-3.25, 3.25, 1.7, 2.05);        // parede da porta
+    wall(2.85, 3.25, -2.05, -1.55);      // batentes da abertura
+    wall(2.85, 3.25, 1.55, 2.05);
+    wall(-3.25, 3.25, -2.05, 2.05, 0.4, 4.25);   // teto (só alvo para câmera e tiros)
+  });
+  collisions.addFloor({ minX: 14.5, maxX: 26.8, minZ: GARAGE_Z - 3.9, maxZ: GARAGE_Z + 3.9, y: 0 });
+  for (const [x, y, z, color, intensity, distance, seed] of [
+    [19.2, 3.7, GARAGE_Z - 1.2, 0xb7d6c0, 16, 10, 3.7],     // luz fria, falhando
+    [23.6, 3.3, GARAGE_Z + 1.2, 0xff9a52, 9, 8, 8.1],       // brasa de lâmpada quente ao fundo
+  ]) {
+    const fixture = streetLightPool.add({ position: new THREE.Vector3(x, y, z), color, intensity, distance, decay: 2 });
+    flickeringStoreLights.push({ fixture, base: intensity, seed });
+  }
+
+  // Rua transversal: sai da calçada oeste, passa pelo vão da muralha do cenário e chega à praça.
+  box(34.2, 0.35, 7.3, materials.asphalt, -31.7, -0.18, CROSS.zc);
+  collisions.addFloor({ minX: CROSS.xEnd - 0.4, maxX: -14.6, minZ: CROSS.z0, maxZ: CROSS.z1, y: 0 });
+  for (const wallZ of [CROSS.z0 - 0.3, CROSS.z1 + 0.3]) {
+    box(15.3, 9, 0.6, materials.brickSoot, -33.2, 4.5, wallZ);
+    collisions.addBox(-33.2, wallZ, 15.3, 0.6, { y0: 0, y1: 9 });
+  }
+  for (const [lampX, face, dir, lit] of [[-20, CROSS.z0, 1, true], [-31, CROSS.z1, -1, true], [-37.5, CROSS.z0, 1, false]]) {
+    const lampPosition = new THREE.Vector3(lampX, 3.6, face + dir * 0.4);
+    box(0.42, 0.12, 0.5, alleyMetal, lampX, 3.68, face + dir * 0.25);
+    const bulbMaterial = new THREE.MeshBasicMaterial({ color: lit ? 0xffc27a : 0x8c7654 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), bulbMaterial);
+    bulb.position.copy(lampPosition);
+    group.add(bulb);
+    const intensity = lit ? 22 : 5;
+    const fixture = streetLightPool.add({ position: lampPosition, color: 0xffae68, intensity, distance: lit ? 12 : 7, decay: 2 });
+    alleyLights.push({ fixture, bulb: bulbMaterial, base: intensity, phase: streetRandom() * 8 });
+  }
+
+  // Bairro pós-guerra (postwar.glb): praça tomada pelo mato, cercada por fachadas. O arquivo já vem otimizado
+  // (sem a cúpula de céu, o chão bege e as massas cinzas do mapa); aqui só escurece os materiais para a noite.
+  modelLoader.load('/models/street/postwar.glb', ({ scene: model }) => {
+    model.position.set(DISTRICT.tx, 0, DISTRICT.tz);
+    model.traverse((object) => {
+      if (!object.isMesh) return;
+      object.castShadow = false;
+      object.receiveShadow = true;
+      const dim = (material) => {
+        const copy = material.clone();
+        if (copy.color) copy.color.multiplyScalar(0.6);
+        if ('roughness' in copy) copy.roughness = Math.max(copy.roughness, 0.92);
+        if ('metalness' in copy) copy.metalness = Math.min(copy.metalness, 0.1);
+        return copy;
+      };
+      object.material = Array.isArray(object.material) ? object.material.map(dim) : dim(object.material);
+    });
+    group.add(model);
+  }, undefined, (error) => console.error('Nao foi possivel carregar o bairro pos-guerra:', error));
+  box(31, 0.35, 56, materials.concrete, -55.5, -0.2, 50.3);
+  collisions.addFloor({ minX: -70.6, maxX: -40.5, minZ: 22.9, maxZ: 77.6, y: 0 });
+  // Fachadas do cenário como colisão (x0, x1, z0, z1, altura — coordenadas do próprio modelo).
+  for (const [x0, x1, z0, z1, h] of [
+    [15.6, 19.8, -2.6, 3.2, 12.6], [16.1, 19.8, -7.3, -2.6, 8.4], [15.0, 19.8, -13.4, -7.3, 9.5],
+    [15.3, 19.8, -22.8, -13.4, 6.5], [15.3, 23.4, -38.3, -30.1, 23.7],
+    [-3.8, 0.3, -3.5, 3.2, 10.1], [-3.8, 0.4, -8.2, -3.5, 12.2], [-3.8, -0.3, -18.7, -8.2, 9.1], [-3.8, 0.1, -30.4, -22.8, 12.3],
+  ]) {
+    collisions.addBox((x0 + x1) / 2 + DISTRICT.tx, (z0 + z1) / 2 + DISTRICT.tz, x1 - x0, z1 - z0, { y0: 0, y1: h });
+  }
+  // Muros que fecham as pontas abertas do cenário.
+  for (const [cx, cz, w, d] of [
+    [-56, 22.75, 30, 0.8], [-56, 77.75, 30, 0.8], [-70.6, 50.3, 0.8, 56],
+    [-44.4, 26.6, 0.8, 7.7], [-44.4, 74.85, 0.8, 5.8],
+  ]) {
+    box(w, 7, d, materials.brickSoot, cx, 3.5, cz);
+    collisions.addBox(cx, cz, w, d, { y0: 0, y1: 7 });
+  }
+  streetProps.place('Barrel_01', { position: [-60.5, 0, 52], height: 0.95, collider: { w: 0.8, d: 0.8, h: 1.05 } });
+  streetProps.place('wooden_crate_01', { position: [-57.5, 0, 45.5], height: 0.7, rotationY: 0.5, collider: { w: 0.85, d: 0.8, h: 0.8 } });
+  for (const [x, y, z, color, intensity, distance, seed] of [
+    [-60.5, 2.2, 52, 0xff8a4a, 28, 15, 1.9],        // barril em chamas (só a luz bruxuleante)
+    [-53.0, 4.5, 66, 0x8fb7ff, 8, 13, 6.4],         // poste azulado, quase morto
+  ]) {
+    const fixture = streetLightPool.add({ position: new THREE.Vector3(x, y, z), color, intensity, distance, decay: 2 });
+    flickeringStoreLights.push({ fixture, base: intensity, seed });
+  }
+
+  // Restos escaneados de ar-condicionado e sacos de lixo nos fundos dos becos e na praça.
+  for (const [x, z, rotationY] of [
+    [25.2, 30.7, Math.PI / 2], [-25.2, 22.2, -Math.PI / 2], [-25.2, 3.1, -Math.PI / 2],
+    [-25.2, 63.2, -Math.PI / 2], [25.2, 2.3, Math.PI / 2], [-66.5, 66, -Math.PI / 2], [-64, 38.5, 0.4],
+  ]) {
+    loadStreetModel('/models/street/ac_trash.glb', {
+      scale: 1, position: { x, y: 0.04, z }, rotationY, tint: 0.8, occlude: false,
+    });
+    collisions.addBox(x, z, 1.7, 1.7, { y0: 0, y1: 1.1 });
+  }
+
+  props.push(
+    { id: 'garage-ammo', pos: new THREE.Vector3(23.4, 0, GARAGE_Z - 0.9), y: 0, radius: 1.8, label: 'Pegar munição de pistola',
+      enabled: () => !garageState.ammo,
+      onUse: (c) => { garageState.ammo = true; c.addAmmo(10); c.toast('Você pegou: Munição de pistola ×10'); } },
+    { id: 'garage-bench', pos: new THREE.Vector3(24.6, 0, GARAGE_Z + 1.3), y: 0, radius: 1.8, label: 'Examinar bancada',
+      onUse: (c) => c.toast('Ferramentas espalhadas e uma lanterna sem pilhas. Alguém tentou fechar o portão por dentro — as marcas no concreto são de unhas.') },
+    { id: 'plaza-poster', pos: new THREE.Vector3(-58.5, 0, 56), y: 0, radius: 2.2, label: 'Ler cartaz',
+      onUse: (c) => c.toast('"ZONA DE EVACUAÇÃO 4 — dirijam-se ao hospital." Alguém riscou por cima, com tinta: "NÃO VÁ."') },
+  );
+
   const hemi = new THREE.HemisphereLight(0x748399, 0x15181c, 0.07);
   group.add(hemi);
   const ambient = new THREE.AmbientLight(0x68758a, 0.02);
@@ -1187,8 +1295,8 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   }
   let splashCursor = 0;
   const dumpsterImpactZones = [-1, 1].flatMap((side) =>
-    [8, 22, 36, 50, 64, 78]
-      .filter((_, index) => index % 2 === 0)
+    ALLEY_Z[side]
+      .filter((_, index) => (index + (side > 0 ? 1 : 0)) % 2 === 0)
       .map((z) => ({ x: side * 13.55, z: z + 1.7 })),
   );
   const splashAt = (x, z, y = 0.018, chance = 0.1) => {

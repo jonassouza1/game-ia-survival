@@ -84,10 +84,6 @@
     {
       "id": "cobblestone_street_night",
       "path": "/hdri/cobblestone_street_night_1k.hdr"
-    },
-    {
-      "id": "qwantani_night_puresky",
-      "path": "/hdri/qwantani_night_puresky_1k.hdr"
     }
   ],
   "models": [

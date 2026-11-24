@@ -204,6 +204,30 @@ o pórtico livre e a porta dupla de entrada. Se o GLB não existir, entra uma fa
 Para adicionar outro cenário, siga o mesmo caminho: um arquivo `src/world/<nome>.js`, uma entrada em `SCENES`
 (`main.js`), em `LOCATIONS` (`environment.js` e `roster.js`) e uma porta de acesso no mundo de origem.
 
+## Rua (assets novos)
+
+A rua usa modelos escaneados/baixados do Sketchfab, já otimizados em `public/models/street/` (≈21 MB no total):
+
+| Arquivo | Uso |
+|---|---|
+| `city_block.glb` | bloco de 4 andares (lado leste, com pórtico de entrada) e skyline |
+| `tower.glb` | torre de concreto (lado oeste, anexos do hospital, flancos da delegacia e skyline) |
+| `garage.glb` | garagem abandonada **enterável** (lado leste, z ≈ 37): a parede do lado +x desabou, o interior é real |
+| `car_burnt.glb` | carro queimado no lugar do antigo; o fogo continua por cima |
+| `ac_trash.glb` | ar-condicionado + sacos de lixo (fundo dos becos e praça) |
+| `postwar.glb` | bairro pós-guerra: praça tomada pelo mato, a oeste, ligada por uma **rua transversal** (z ≈ 42) |
+
+Itens do layout (`src/world/cityStreet.js`): `ALLEY_Z` (becos que sobraram), `CROSS` (rua transversal), `DISTRICT` (posição do
+bairro), `placeCity` / `placeTower` e a garagem (`GARAGE_Z`). As paredes da garagem e as fachadas do bairro são colisão
+por caixas (`registerSolid`), então não há raycast em malhas pesadas.
+
+Os GLB originais eram pesados demais (o carro tinha 898 mil triângulos e 73 MB): `tools/optimize-street-assets.mjs`
+decima, converte materiais (`unlit` e spec-gloss → PBR), reduz texturas e remove o que não serve (cúpula de céu,
+chão e massas cinzas do cenário pós-guerra, chão escaneado sob o carro). O céu **não tem mais estrelas**: o fundo do HDRI
+foi removido e a cúpula de nuvens do `storm.js` agora cobre o céu inteiro.
+
+> Os assets novos vieram do Sketchfab; confira a licença de cada um antes de publicar o jogo.
+
 ## Tempestade (rua)
 
 `src/render/storm.js` controla tudo num só lugar: cada descarga sorteia direção e distância, e dela saem juntos o

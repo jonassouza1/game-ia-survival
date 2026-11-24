@@ -76,6 +76,17 @@ export const LOCATIONS = {
           { model: 'prisoner', look: textured({ seed: 15, blood: 0.7 }) },
         ],
       },
+      // Bairro pós-guerra (oeste): parados na praça até perceberem o jogador.
+      {
+        name: 'bairro',
+        kind: 'idle',
+        wakeRadius: 7,
+        members: [
+          { model: 'prisoner', x: -61.5, z: 48.5, yaw: 1.2, look: textured({ seed: 41, blood: 0.7 }) },
+          { model: 'copZombie', x: -65.5, z: 58.5, yaw: -0.6, look: textured({ seed: 42, blood: 0.6 }) },
+          { model: 'zombieGirl', x: -57.5, z: 64.5, yaw: 3.0, look: textured({ seed: 43, blood: 0.7 }) },
+        ],
+      },
     ],
   },
 };
