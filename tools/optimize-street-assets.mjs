@@ -5,7 +5,7 @@
 //     node tools/optimize-street-assets.mjs car garage tower city ac postwar
 import { NodeIO, getBounds } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { weld, simplify, compactPrimitive, prune, dedup, textureCompress, metalRough, flatten } from '@gltf-transform/functions';
+import { weld, simplify, simplifyPrimitive, compactPrimitive, join, prune, dedup, textureCompress, metalRough, flatten } from '@gltf-transform/functions';
 import draco3d from 'draco3dgltf';
 import { MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
@@ -106,7 +106,7 @@ const jobs = {
     }
   },
   async tower(doc) { await doc.transform(prune(), dedup(), tex(1024, 'jpeg', 82)); },
-  async city(doc) { await doc.transform(prune(), dedup(), tex(1024, 'jpeg', 78)); },
+  async city(doc) { await doc.transform(prune(), dedup(), tex(1024, 'jpeg', 78), flatten(), join({ keepMeshes: false, keepNamed: false })); },
   async ac(doc) {
     simplifyByPosition(doc, 0.3, 0.02);
     await doc.transform(prune(), dedup(), tex(1024, 'jpeg', 78));
@@ -117,8 +117,21 @@ const jobs = {
     for (const n of root.listNodes()) {
       if (['Sphere', 'map.osm', '42526024.001'].includes(n.getName())) { n.listChildren().forEach((c) => c.dispose()); n.setMesh(null); n.dispose(); }
     }
+    // lajes de calçada/estrada do lado de fora da muralha leste: ficavam soltas no meio do nada
+    for (const n of root.listNodes()) if (['Cube.001', 'Cube.002', 'Circle.004', 'Circle.005'].includes(n.getName())) { n.setMesh(null); n.dispose(); }
+    // peças com polígonos de sobra (monte de cascalho, tronco da hera, toldo): 60 mil → ~15 mil etc., sem mudar a silhueta
+    await doc.transform(weld());
+    for (const n of root.listNodes()) {
+      const mesh = n.getMesh(); if (!mesh) continue;
+      for (const prim of mesh.listPrimitives()) {
+        const matName = prim.getMaterial()?.getName() ?? '';
+        const ratio = /^gravas$/.test(matName) ? 0.25 : /^ivy-tronc/.test(matName) ? 0.35 : /^toile$/.test(matName) ? 0.35 : 0;
+        if (ratio) simplifyPrimitive(prim, { simplifier: MeshoptSimplifier, ratio, error: 0.01, lockBorder: true });
+      }
+    }
     await doc.transform(metalRough());
     await doc.transform(prune(), dedup(), tex(1024, 'jpeg', 80));
+    await doc.transform(flatten(), join({ keepMeshes: false, keepNamed: false }));
     for (const t of root.listTextures()) {      // o que sobrou em PNG (com transparência) desce para 512
       if (t.getMimeType() !== 'image/png') continue;
       const img = await sharp(Buffer.from(t.getImage())).resize(512, 512, { fit: 'inside' }).png({ compressionLevel: 9, palette: false }).toBuffer();
@@ -143,4 +156,10 @@ for (const name of process.argv.slice(2)) {
   await io.write(OUT + dst, doc);
   const b = getBounds(doc.getRoot().listScenes()[0]);
   console.log(`  tris ${before} -> ${triCount(doc)} | bounds`, b.min.map(v => +v.toFixed(2)), b.max.map(v => +v.toFixed(2)));
+}
+// resumo de chamadas de desenho (primitivas) por arquivo gerado
+for (const name of process.argv.slice(2)) {
+  const doc = await io.read(OUT + files[name][1]);
+  let prims = 0; for (const n of doc.getRoot().listNodes()) { const m = n.getMesh(); if (m) prims += m.listPrimitives().length; }
+  console.log(`  ${files[name][1]}: ${prims} primitivas (draw calls por instância)`);
 }

@@ -226,6 +226,24 @@ decima, converte materiais (`unlit` e spec-gloss → PBR), reduz texturas e remo
 chão e massas cinzas do cenário pós-guerra, chão escaneado sob o carro). O céu **não tem mais estrelas**: o fundo do HDRI
 foi removido e a cúpula de nuvens do `storm.js` agora cobre o céu inteiro.
 
+### Prédios que dá para entrar
+- **city_block** (lado leste, 2 prédios): o térreo tem hall, salas e móveis de verdade. A colisão das paredes é gerada do próprio
+  modelo (`tools/build-interior-colliders.mjs` → `src/world/data/city_block.walls.json`). A entrada é a porta do pórtico.
+- **tower** (lado oeste, 3 torres): o portão de enrolar do meio sobe e abre um galpão com caixas e barris.
+- **garagem** (lado leste): entra pelo vão da parede desabada.
+Cada um tem luzes internas instáveis; o `city_block` também tem itens para examinar/pegar.
+
+### Fogo do carro
+Chamas procedurais (ruído fractal rolando para cima, rampa de cor vermelho → amarelo → branco, mistura aditiva), fagulhas
+animadas na GPU (um único `Points`), fumaça mais escura, brilho no asfalto molhado e luz bruxuleante.
+
+### Desempenho (sem mudar o visual)
+- Cada GLB é carregado uma vez e as instâncias são clones (antes cada torre/bloco repetia texturas na GPU).
+- Malhas do mesmo material foram juntadas (`city_block` 70 → 48 chamadas por instância; bairro 81 → 21).
+- Hidrantes (86 mil → 21 mil triângulos), cascalho, tronco de hera e toldo do bairro foram decimados.
+- O bairro só é desenhado de dentro dele ou olhando pela rua transversal.
+- Medido no início da rua: ~686 mil → ~511 mil triângulos por quadro; texturas 221 → 209.
+
 > Os assets novos vieram do Sketchfab; confira a licença de cada um antes de publicar o jogo.
 
 ## Tempestade (rua)

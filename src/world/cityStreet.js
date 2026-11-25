@@ -1,3 +1,4 @@
+import cityWalls from './data/city_block.walls.json';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -180,8 +181,31 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   let pendingHospitalTransition = null;
   let hospitalDoorItem = null;
   const hospitalDoorLeaves = [];
+  // Cada arquivo é baixado e decodificado uma única vez; as instâncias são clones que dividem geometria e
+  // texturas (antes, cada torre/bloco repetia o GLB inteiro na memória da GPU).
+  const modelCache = new Map();
+  const loadShared = (asset, onSuccess, onError) => {
+    let entry = modelCache.get(asset);
+    if (!entry) {
+      entry = { scene: null, error: null, waiting: [] };
+      modelCache.set(asset, entry);
+      const current = entry;
+      modelLoader.load(asset, (gltf) => {
+        current.scene = gltf.scene;
+        current.waiting.forEach(([ok]) => ok({ scene: gltf.scene.clone(true) }));
+        current.waiting.length = 0;
+      }, undefined, (error) => {
+        current.error = error;
+        current.waiting.forEach(([, fail]) => fail(error));
+        current.waiting.length = 0;
+      });
+    }
+    if (entry.scene) onSuccess({ scene: entry.scene.clone(true) });
+    else if (entry.error) onError(entry.error);
+    else entry.waiting.push([onSuccess, onError]);
+  };
   const loadStreetModel = (asset, { height, scale, position, rotationY = 0, tint = 1, occlude = true, rough = 0.9 }, onLoad = () => {}) => {
-    modelLoader.load(asset, ({ scene: model }) => {
+    loadShared(asset, ({ scene: model }) => {
       model.rotation.y = rotationY;
       model.updateMatrixWorld(true);
       const initialBounds = new THREE.Box3().setFromObject(model);
@@ -212,7 +236,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       group.add(model);
       if (occlude) model.traverse((object) => { if (object.isMesh) occluders.push(object); });
       onLoad(model);
-    }, undefined, (error) => {
+    }, (error) => {
       console.error(`Nao foi possivel carregar o asset ${asset}:`, error);
       if (asset.includes('car_burnt')) car.visible = true;
     });
@@ -262,23 +286,111 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   // sobre a calçada. tower: torre de concreto (~10,5 × 14,4 m na planta, 25 m de altura), fachada de janelas em +x.
   const CITY_SCALE = 0.02395;
   const TOWER_SCALE = 3;
-  const placeCity = (side, zc) => {
+  // Itens/props que só podem ser criados depois que `props` e `streetProps` existirem (bloco mais abaixo).
+  const pendingProps = [];
+  const pendingFurniture = [];
+  const cityState = { ammo: false };
+
+  // ── city_block: o térreo tem hall, salas e móveis de verdade (a entrada já vem aberta) ──
+  // Mapeia coordenadas do GLB (unidades originais) para o mundo; o modelo é centrado na caixa dele.
+  const CITY = { cx: 81.46, cz: 189.235, floorY: 11.2 };
+  const cityToWorld = (side, zc, nx, nz) => ({
+    x: side * 19.1 + side * (nz - CITY.cz) * CITY_SCALE,
+    z: zc - side * (nx - CITY.cx) * CITY_SCALE,
+  });
+  const placeCity = (side, zc, interior = {}) => {
     loadStreetModel('/models/street/city_block.glb', {
       scale: CITY_SCALE, position: { x: side * 19.1, y: 0, z: zc }, rotationY: side * Math.PI / 2, tint: 0.66, occlude: false,
     });
-    registerSolid(side * 20.0, zc, 10.6, 24.5, 13);
-    const fixture = streetLightPool.add({
-      position: new THREE.Vector3(side * 12.9, 3.4, zc - side * 2.6),   // sobre o pórtico de entrada
+    const rect = (x0, x1, z0, z1) => {
+      const a = cityToWorld(side, zc, x0, z0), b = cityToWorld(side, zc, x1, z1);
+      return { cx: (a.x + b.x) / 2, cz: (a.z + b.z) / 2, w: Math.abs(a.x - b.x), d: Math.abs(a.z - b.z) };
+    };
+    // Parte alta (câmera/tiros): do teto do térreo para cima.
+    registerSolid(side * 20.0, zc, 10.6, 24.5, 10.3, 2.9);
+    // Paredes e móveis do térreo, geradas automaticamente do próprio modelo (tools/build-interior-colliders.mjs).
+    for (const [x0, x1, z0, z1] of cityWalls.rects) {
+      const r = rect(x0, x1, z0, z1);
+      registerSolid(r.cx, r.cz, Math.max(r.w, 0.14), Math.max(r.d, 0.14), 2.9);
+    }
+    // Perímetro de segurança: vidros translúcidos não geram parede. A porta fica no vão x ∈ [97, 175].
+    for (const [x0, x1, z0, z1] of [[-440, 97, 3, 14], [175, 600, 3, 14], [-440, -424, 3, 452], [585, 600, 3, 452], [-440, 600, 440, 452]]) {
+      const r = rect(x0, x1, z0, z1);
+      registerSolid(r.cx, r.cz, r.w, r.d, 2.9);
+    }
+    // Pisos: hall interno e o pórtico (27 cm acima da calçada, como no modelo).
+    const floorY = CITY.floorY * CITY_SCALE;
+    for (const [x0, x1, z0, z1] of [[-428, 188, 7, 263], [92, 180, -66, 8]]) {
+      const r = rect(x0, x1, z0, z1);
+      collisions.floors.unshift({ minX: r.cx - r.w / 2, maxX: r.cx + r.w / 2, minZ: r.cz - r.d / 2, maxZ: r.cz + r.d / 2, y: floorY });
+    }
+    // Luz da entrada + luzes internas fracas e instáveis.
+    const doorLight = streetLightPool.add({
+      position: new THREE.Vector3(side * 12.9, 3.4, zc - side * 1.3),       // sobre a porta (x ≈ 136 no modelo)
       color: 0xffa65e, intensity: 18, distance: 8, decay: 2,
     });
-    flickeringStoreLights.push({ fixture, base: 18, seed: zc + side * 11 });
+    flickeringStoreLights.push({ fixture: doorLight, base: 18, seed: zc + side * 11 });
+    for (const [nx, nz, color, intensity, distance, seed] of [
+      [-330, 120, 0xb9d3c0, 12, 8, 1.3], [-200, 70, 0xffa860, 8, 7, 4.2], [-40, 140, 0xb9d3c0, 13, 9, 7.7], [140, 100, 0xffa860, 9, 7, 9.1],
+    ]) {
+      const at = cityToWorld(side, zc, nx, nz);
+      const fixture = streetLightPool.add({
+        position: new THREE.Vector3(at.x, 112 * CITY_SCALE, at.z), color, intensity, distance, decay: 2,
+      });
+      flickeringStoreLights.push({ fixture, base: intensity, seed: seed + zc });
+    }
+    for (const item of interior.items ?? []) {
+      const at = cityToWorld(side, zc, item.nx, item.nz);
+      pendingProps.push({ ...item, pos: new THREE.Vector3(at.x, 0, at.z), y: floorY });
+    }
   };
-  const placeTower = (side, zc, tint = 0.72) => {
+
+  // ── tower: casca de concreto com 3 portões de enrolar; o do meio sobe e abre a entrada ──
+  const TOWER = { cx: 1.625, cz: -0.297, s: TOWER_SCALE };
+  const towerToWorld = (side, zc, nx, nz) => {
+    const centerX = side * (14.9 + 5.25);
+    return side > 0
+      ? { x: centerX - (nx - TOWER.cx) * TOWER.s, z: zc - (nz - TOWER.cz) * TOWER.s }
+      : { x: centerX + (nx - TOWER.cx) * TOWER.s, z: zc + (nz - TOWER.cz) * TOWER.s };
+  };
+  const placeTower = (side, zc, tint = 0.72, enterable = false) => {
     const cx = side * (14.9 + 5.25);
     loadStreetModel('/models/street/tower.glb', {
       scale: TOWER_SCALE, position: { x: cx, y: 0, z: zc }, rotationY: side > 0 ? Math.PI : 0, tint, occlude: false,
+    }, (model) => {
+      if (!enterable) return;
+      const door = model.getObjectByName('2_Door1_0');
+      if (!door || !door.parent) return;
+      // Sobe o portão do meio ~3,6 m (por trás da parede, como um portão de enrolar aberto).
+      model.updateMatrixWorld(true);
+      const inverse = new THREE.Matrix4().copy(door.parent.matrixWorld).invert();
+      const origin = new THREE.Vector3(0, 0, 0).applyMatrix4(inverse);
+      const lift = new THREE.Vector3(0, 3.6, 0).applyMatrix4(inverse).sub(origin);
+      door.position.add(lift);
     });
-    registerSolid(cx, zc, 10.5, 14.4, 25.4);
+    if (!enterable) { registerSolid(cx, zc, 10.5, 14.4, 25.4); return; }
+    registerSolid(cx, zc, 10.5, 14.4, 21.7, 3.7);          // parte alta: só para câmera/tiros
+    const rect = (x0, x1, z0, z1) => {
+      const a = towerToWorld(side, zc, x0, z0), b = towerToWorld(side, zc, x1, z1);
+      return { cx: (a.x + b.x) / 2, cz: (a.z + b.z) / 2, w: Math.abs(a.x - b.x), d: Math.abs(a.z - b.z) };
+    };
+    for (const [x0, x1, z0, z1] of [
+      [-0.2, 0.1, -2.8, 2.2], [-0.2, 3.5, -2.8, -2.45], [-0.2, 3.5, 1.85, 2.2],   // fundo e laterais
+      [3.1, 3.5, -2.8, -1.0], [3.1, 3.5, 0.5, 2.2],                                 // fachada, com o vão do portão do meio
+    ]) {
+      const r = rect(x0, x1, z0, z1);
+      registerSolid(r.cx, r.cz, r.w, r.d, 3.7);
+    }
+    for (const [x0, x1, z0, z1] of [[0.05, 3.1, -2.4, 1.8], [3.0, 3.6, -1.0, 0.5]]) {
+      const r = rect(x0, x1, z0, z1);
+      collisions.floors.unshift({ minX: r.cx - r.w / 2, maxX: r.cx + r.w / 2, minZ: r.cz - r.d / 2, maxZ: r.cz + r.d / 2, y: 0 });
+    }
+    for (const [nx, nz, color, intensity, seed] of [[1.0, -1.2, 0xb9d3c0, 12, 2.2], [2.3, 0.9, 0xffa860, 8, 5.7]]) {
+      const at = towerToWorld(side, zc, nx, nz);
+      const fixture = streetLightPool.add({ position: new THREE.Vector3(at.x, 3.25, at.z), color, intensity, distance: 9, decay: 2 });
+      flickeringStoreLights.push({ fixture, base: intensity, seed: seed + zc });
+    }
+    pendingFurniture.push({ side, zc });
   };
   const closeGap = (side, z0, z1) => {     // fresta entre um beco e o prédio vizinho
     const length = z1 - z0;
@@ -287,14 +399,20 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     registerSolid(side * 15.9, (z0 + z1) / 2, 2.4, length, 9);
   };
   // Esquerda: três torres, becos entre elas e, em z ≈ 42, a rua transversal para o bairro.
-  placeTower(-1, 13.05);
-  placeTower(-1, 31.45);
-  placeTower(-1, 53.15);
+  placeTower(-1, 13.05, 0.72, true);
+  placeTower(-1, 31.45, 0.72, true);
+  placeTower(-1, 53.15, 0.72, true);
   closeGap(-1, 0.35, 1.15); closeGap(-1, 5.05, 5.85);
   closeGap(-1, 60.35, 61.25); closeGap(-1, 65.15, HOSPITAL_ANNEX_Z);
   // Direita: bloco, beco, garagem (dá para entrar), bloco.
-  placeCity(1, 16.5);
-  placeCity(1, 53.75);
+  placeCity(1, 16.5, { items: [
+    { id: 'city-a-desk', nx: -250, nz: 60, radius: 2.2, label: 'Examinar mesa',
+      onUse: (c) => c.toast('Uma lista de chamada com quase todos os nomes riscados. O último, ainda legível, está datado de ontem.') },
+  ] });
+  placeCity(1, 53.75, { items: [
+    { id: 'city-b-ammo', nx: -300, nz: 200, radius: 2.0, label: 'Pegar munição de pistola',
+      enabled: () => !cityState.ammo, onUse: (c) => { cityState.ammo = true; c.addAmmo(12); c.toast('Você pegou: Munição de pistola ×12'); } },
+  ] });
   closeGap(1, 32.65, 33.15); closeGap(1, 40.85, 41.5);
   // Anexo do hospital: uma torre encostada na lateral da ala, em cada lado.
   if (useHospitalBuilding) {
@@ -613,9 +731,12 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   box(1.0, 0.26, 0.08, materials.rust, -0.2, 0.46, 2.12, car);
   car.visible = false;
   group.add(car);
+  // Fogo procedural: ruído fractal (fbm) rolando para cima, coluna que afina com a altura e rampa de cor
+  // (vermelho escuro → laranja → amarelo → branco quente no miolo). Mistura aditiva, sem texturas.
   const flameMaterial = (seed) => new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
     uniforms: { time: { value: 0 }, seed: { value: seed } },
     vertexShader: `
@@ -629,23 +750,35 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       uniform float time;
       uniform float seed;
       varying vec2 vUv;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        return v;
+      }
       void main() {
         float y = vUv.y;
-        float turbulence = sin(y * 19.0 + time * 8.0 + seed) * 0.025
-          + sin(y * 41.0 - time * 12.0 + seed * 1.7) * 0.012;
-        float sway = sin(time * 5.2 + seed + y * 7.0) * (0.055 + y * 0.09) + turbulence;
-        float edge = abs(vUv.x - 0.5 - sway);
-        float flicker = 0.78 + 0.22 * sin(time * 7.0 + seed + y * 5.0);
-        float width = mix(0.36, 0.018, y) * flicker;
-        float shape = 1.0 - smoothstep(width * 0.5, width, edge);
-        float base = smoothstep(0.0, 0.12, y) * (1.0 - smoothstep(0.72, 1.0, y));
-        float alpha = shape * base * flicker;
-        if (alpha < 0.025) discard;
-        vec3 outer = mix(vec3(1.0, 0.36, 0.025), vec3(0.76, 0.07, 0.008), smoothstep(0.36, 0.92, y));
-        vec3 core = mix(vec3(1.0, 0.96, 0.58), vec3(1.0, 0.48, 0.06), smoothstep(0.0, 0.66, y));
-        float center = 1.0 - smoothstep(0.0, width * 0.72, edge);
-        vec3 color = mix(outer, core, center * (1.0 - smoothstep(0.68, 0.98, y)));
-        gl_FragColor = vec4(color, alpha * 0.92);
+        float x = (vUv.x - 0.5) * 2.0;
+        vec2 p = vec2(x * 1.6 + seed * 7.3, y * 2.6 - time * 1.9);
+        float warp = fbm(p * 1.4 + vec2(0.0, -time * 1.1)) - 0.5;
+        float n = fbm(p + vec2(warp * 1.5, 0.0));
+        float width = mix(1.0, 0.16, pow(y, 0.75));
+        float body = 1.0 - smoothstep(0.0, 1.0, abs(x + warp * 0.55 * y) / width + (n - 0.5) * 0.8 * y);
+        float top = 1.0 - smoothstep(0.38, 1.0, y + (n - 0.5) * 0.6);
+        float heat = body * top * (0.45 + n * 1.05) * smoothstep(0.0, 0.07, y);
+        float flicker = 0.9 + 0.1 * sin(time * 17.0 + seed * 3.0);
+        heat *= flicker;
+        if (heat < 0.03) discard;
+        vec3 color = mix(vec3(0.42, 0.015, 0.0), vec3(1.0, 0.3, 0.015), smoothstep(0.08, 0.45, heat));
+        color = mix(color, vec3(1.0, 0.72, 0.2), smoothstep(0.4, 0.8, heat));
+        color = mix(color, vec3(1.0, 0.96, 0.78), smoothstep(0.8, 1.15, heat));
+        float alpha = clamp(heat * 1.35, 0.0, 1.0);
+        gl_FragColor = vec4(color * alpha, alpha);
       }
     `,
   });
@@ -749,26 +882,20 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   const fire = new THREE.Group();
   fire.position.set(-3.2, 0, 9.3);
   const flames = [];
-  for (let i = 0; i < 10; i++) {
-    const seed = i * 1.37;
-    const flame = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62 + (i % 3) * 0.22, 1.55 + (i % 2) * 0.52),
-      flameMaterial(seed),
-    );
-    flame.position.set((i - 4.5) * 0.18, 1.12 + (i % 3) * 0.14, -0.86 + (i % 2) * 0.52);
-    flame.userData.seed = seed;
-    flame.userData.originX = flame.position.x;
+  // Línguas de fogo (base y, largura, altura): cofre do motor (frente = -z), cabine e porta-malas.
+  for (const [i, [x, y, z, w, h]] of [
+    [0, 0.8, -1.45, 1.7, 2.6], [0.28, 0.86, -1.0, 1.2, 2.0], [-0.3, 0.84, -1.8, 1.1, 1.8],
+    [0.1, 0.95, -0.2, 1.3, 2.2], [-0.35, 1.0, 0.35, 1.0, 1.8], [0.2, 0.9, 0.95, 0.95, 1.5],
+    [0.42, 0.7, -2.0, 0.7, 1.2], [-0.45, 0.75, -0.7, 0.8, 1.4],
+  ].entries()) {
+    const geometry = new THREE.PlaneGeometry(w, h);
+    geometry.translate(0, h / 2, 0);              // pivô na base: a chama gira de frente para a câmera pelo pé
+    const flame = new THREE.Mesh(geometry, flameMaterial(i * 1.91));
+    flame.position.set(x, y, z);
+    flame.userData.seed = i * 1.91;
+    flame.renderOrder = 6;
     flames.push(flame);
     fire.add(flame);
-    // Uma segunda lâmina cruzada dá volume ao fogo quando visto de lado,
-    // sem depender de transparência volumétrica pesada.
-    const crossFlame = new THREE.Mesh(flame.geometry, flameMaterial(seed + 0.73));
-    crossFlame.position.copy(flame.position);
-    crossFlame.rotation.y = Math.PI / 2;
-    crossFlame.userData.seed = seed + 0.73;
-    crossFlame.userData.originX = crossFlame.position.x;
-    flames.push(crossFlame);
-    fire.add(crossFlame);
   }
   // Mancha de fuligem e combustível queimado no asfalto, com bordas suaves.
   const scorchCanvas = document.createElement('canvas');
@@ -790,6 +917,26 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   scorchGround.rotation.x = -Math.PI / 2;
   scorchGround.position.set(0, 0.018, 0.12);
   fire.add(scorchGround);
+  // Luz do fogo espalhada no asfalto molhado (aditivo, pulsa junto com as chamas).
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = 128;
+  const glowCtx = glowCanvas.getContext('2d');
+  const glowGradient = glowCtx.createRadialGradient(64, 64, 2, 64, 64, 62);
+  glowGradient.addColorStop(0, 'rgba(255,170,80,0.9)');
+  glowGradient.addColorStop(0.35, 'rgba(255,100,30,0.45)');
+  glowGradient.addColorStop(1, 'rgba(255,60,10,0)');
+  glowCtx.fillStyle = glowGradient;
+  glowCtx.fillRect(0, 0, 128, 128);
+  const glowGround = new THREE.Mesh(
+    new THREE.PlaneGeometry(9, 9),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(glowCanvas), transparent: true, opacity: 0.4, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false,
+    }),
+  );
+  glowGround.rotation.x = -Math.PI / 2;
+  glowGround.position.set(0, 0.035, -0.3);
+  fire.add(glowGround);
   group.add(fire);
   fire.userData.noAO = true; // fogo/fumaça não devem virar oclusores do GTAO
   const fireLight = new THREE.PointLight(0xff6a24, 42, 14, 1.65);
@@ -798,7 +945,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   const smokePuffs = [];
   for (let i = 0; i < 10; i++) {
     const smokeMaterial = new THREE.SpriteMaterial({
-      map: smokeTexture, color: i % 3 === 0 ? 0x666d6a : 0x929896, transparent: true, opacity: 0.52,
+      map: smokeTexture, color: i % 3 === 0 ? 0x4a4e4d : 0x777c7b, transparent: true, opacity: 0.52,
       depthWrite: false, blending: THREE.NormalBlending,
     });
     const puff = new THREE.Sprite(smokeMaterial);
@@ -808,18 +955,53 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     smokePuffs.push(puff);
     fire.add(puff);
   }
-  for (let i = 0; i < 14; i++) {
-    const ember = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025 + streetRandom() * 0.025, 5, 4),
-      new THREE.MeshBasicMaterial({ color: i % 3 ? 0xff8a30 : 0xffd26a }),
-    );
-    ember.userData = {
-      phase: streetRandom(), drift: streetRandom() * Math.PI * 2,
-      rise: 1.6 + streetRandom() * 2.2,
-    };
-    embers.push(ember);
-    fire.add(ember);
+  // Fagulhas: um único Points animado inteiramente na GPU (uma chamada de desenho, sem laço por quadro).
+  const emberCount = 56;
+  const emberGeometry = new THREE.BufferGeometry();
+  const emberBase = new Float32Array(emberCount * 3);
+  const emberData = new Float32Array(emberCount * 4);
+  for (let i = 0; i < emberCount; i++) {
+    emberBase.set([(streetRandom() - 0.5) * 1.1, 0.95 + streetRandom() * 0.35, -0.9 + (streetRandom() - 0.5) * 2.4], i * 3);
+    emberData.set([streetRandom(), streetRandom(), 0.7 + streetRandom() * 1.4, 2.0 + streetRandom() * 3.0], i * 4);
   }
+  emberGeometry.setAttribute('position', new THREE.BufferAttribute(emberBase, 3));
+  emberGeometry.setAttribute('seedData', new THREE.BufferAttribute(emberData, 4));
+  const emberMaterial = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { time: { value: 0 } },
+    vertexShader: `
+      attribute vec4 seedData;
+      uniform float time;
+      varying float vLife;
+      varying float vFlick;
+      void main() {
+        float life = fract(time * 0.26 * (0.6 + seedData.z * 0.3) + seedData.x);
+        vec3 p = position;
+        p.y += life * seedData.z * 3.4;
+        p.x += sin(time * 1.7 + seedData.y * 6.283) * (0.12 + life * 0.6) + life * 0.55;   // vento leve
+        p.z += cos(time * 1.3 + seedData.y * 6.283) * (0.1 + life * 0.35);
+        vLife = life;
+        vFlick = 0.65 + 0.35 * sin(time * 21.0 + seedData.y * 40.0);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_PointSize = seedData.w * (1.0 - life * 0.75) * (160.0 / max(0.5, -mv.z));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying float vLife;
+      varying float vFlick;
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        float a = pow(1.0 - d * 2.0, 2.0) * (1.0 - vLife) * vFlick;
+        vec3 color = mix(vec3(1.0, 0.85, 0.35), vec3(1.0, 0.22, 0.02), vLife);
+        gl_FragColor = vec4(color * a * 1.5, a);
+      }
+    `,
+  });
+  const emberPoints = new THREE.Points(emberGeometry, emberMaterial);
+  emberPoints.frustumCulled = false;
+  fire.add(emberPoints);
   box(1.3, 0.12, 0.8, materials.metal, 1.0, 0.1, 5.2);
   box(0.8, 0.08, 0.42, materials.rust, -7, 0.06, 1.5);
 
@@ -1100,10 +1282,19 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   // Rua transversal: sai da calçada oeste, passa pelo vão da muralha do cenário e chega à praça.
   box(34.2, 0.35, 7.3, materials.asphalt, -31.7, -0.18, CROSS.zc);
   collisions.addFloor({ minX: CROSS.xEnd - 0.4, maxX: -14.6, minZ: CROSS.z0, maxZ: CROSS.z1, y: 0 });
-  for (const wallZ of [CROSS.z0 - 0.3, CROSS.z1 + 0.3]) {
-    box(15.3, 9, 0.6, materials.brickSoot, -33.2, 4.5, wallZ);
-    collisions.addBox(-33.2, wallZ, 15.3, 0.6, { y0: 0, y1: 9 });
+  // Torres com a fachada de janelas virada para a passagem (antes eram muros lisos).
+  for (const [towerZ, yaw] of [[CROSS.z0 - 5.25, -Math.PI / 2], [CROSS.z1 + 5.25, Math.PI / 2]]) {
+    loadStreetModel('/models/street/tower.glb', {
+      scale: TOWER_SCALE, position: { x: -33.65, y: 0, z: towerZ }, rotationY: yaw, tint: 0.72, occlude: false,
+    });
+    registerSolid(-33.65, towerZ, 14.4, 10.5, 25.4);
   }
+  // Trecho que atravessa a muralha leste do bairro: muros encostam nas fachadas soltas e escondem o "avesso" delas.
+  for (const [wallZ, wallH] of [[CROSS.z0 + 0.15, 24], [CROSS.z1 - 0.15, 7]]) {
+    box(8.0, wallH, 0.3, materials.brickSoot, -44.85, wallH / 2, wallZ);
+    collisions.addBox(-44.85, wallZ, 8.0, 0.3, { y0: 0, y1: wallH });
+  }
+  streetLightPool.add({ position: new THREE.Vector3(-44.5, 4.2, CROSS.zc), color: 0xffa860, intensity: 9, distance: 10, decay: 2 });
   for (const [lampX, face, dir, lit] of [[-20, CROSS.z0, 1, true], [-31, CROSS.z1, -1, true], [-37.5, CROSS.z0, 1, false]]) {
     const lampPosition = new THREE.Vector3(lampX, 3.6, face + dir * 0.4);
     box(0.42, 0.12, 0.5, alleyMetal, lampX, 3.68, face + dir * 0.25);
@@ -1118,6 +1309,8 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
 
   // Bairro pós-guerra (postwar.glb): praça tomada pelo mato, cercada por fachadas. O arquivo já vem otimizado
   // (sem a cúpula de céu, o chão bege e as massas cinzas do mapa); aqui só escurece os materiais para a noite.
+  // Partes do bairro (modelo, mato, heras): só são desenhadas quando dá para vê-las (ver `update`).
+  const districtParts = [];
   modelLoader.load('/models/street/postwar.glb', ({ scene: model }) => {
     model.position.set(DISTRICT.tx, 0, DISTRICT.tz);
     model.traverse((object) => {
@@ -1126,7 +1319,14 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       object.receiveShadow = true;
       const dim = (material) => {
         const copy = material.clone();
-        if (copy.color) copy.color.multiplyScalar(0.6);
+        const cutout = copy.alphaTest > 0 || copy.transparent;       // folhagem, heras, grades
+        if (cutout) {
+          copy.side = THREE.DoubleSide;                              // folhas vistas de trás não somem
+          copy.transparent = false;
+          copy.alphaTest = Math.max(copy.alphaTest, 0.42);           // borda limpa: sem pedaços semi-transparentes boiando
+          copy.depthWrite = true;
+        }
+        if (copy.color) copy.color.multiplyScalar(cutout ? 0.9 : 0.6);
         if ('roughness' in copy) copy.roughness = Math.max(copy.roughness, 0.92);
         if ('metalness' in copy) copy.metalness = Math.min(copy.metalness, 0.1);
         return copy;
@@ -1134,9 +1334,10 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       object.material = Array.isArray(object.material) ? object.material.map(dim) : dim(object.material);
     });
     group.add(model);
+    districtParts.push(model);
   }, undefined, (error) => console.error('Nao foi possivel carregar o bairro pos-guerra:', error));
-  box(31, 0.35, 56, materials.concrete, -55.5, -0.2, 50.3);
-  collisions.addFloor({ minX: -70.6, maxX: -40.5, minZ: 22.9, maxZ: 77.6, y: 0 });
+  box(31, 0.35, 49.5, materials.concrete, -55.5, -0.2, 53.55);
+  collisions.addFloor({ minX: -70.6, maxX: -40.5, minZ: 29.4, maxZ: 77.6, y: 0 });
   // Fachadas do cenário como colisão (x0, x1, z0, z1, altura — coordenadas do próprio modelo).
   for (const [x0, x1, z0, z1, h] of [
     [15.6, 19.8, -2.6, 3.2, 12.6], [16.1, 19.8, -7.3, -2.6, 8.4], [15.0, 19.8, -13.4, -7.3, 9.5],
@@ -1147,8 +1348,8 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   }
   // Muros que fecham as pontas abertas do cenário.
   for (const [cx, cz, w, d] of [
-    [-56, 22.75, 30, 0.8], [-56, 77.75, 30, 0.8], [-70.6, 50.3, 0.8, 56],
-    [-44.4, 26.6, 0.8, 7.7], [-44.4, 74.85, 0.8, 5.8],
+    [-56, 29.0, 30, 0.8], [-56, 77.75, 30, 0.8], [-70.6, 53.4, 0.8, 49.5],
+    [-44.4, 29.7, 0.8, 1.5], [-44.4, 74.85, 0.8, 5.8],
   ]) {
     box(w, 7, d, materials.brickSoot, cx, 3.5, cz);
     collisions.addBox(cx, cz, w, d, { y0: 0, y1: 7 });
@@ -1173,6 +1374,129 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     });
     collisions.addBox(x, z, 1.7, 1.7, { y0: 0, y1: 1.1 });
   }
+
+  props.push(...pendingProps);
+  // Mobília simples dentro das torres que dá para entrar.
+  for (const { side, zc } of pendingFurniture) {
+    for (const [nx, nz, kind, rotationY] of [[0.55, -1.8, 'wooden_crate_01', 0.3], [0.65, 1.25, 'Barrel_01', 0], [2.5, -1.95, 'wooden_crate_01', 1.2], [1.6, 1.5, 'Barrel_01', 0]]) {
+      const at = towerToWorld(side, zc, nx, nz);
+      const isBarrel = kind === 'Barrel_01';
+      streetProps.place(kind, {
+        position: [at.x, 0, at.z], height: isBarrel ? 0.95 : 0.7, rotationY,
+        collider: { w: isBarrel ? 0.8 : 0.85, d: isBarrel ? 0.8 : 0.8, h: isBarrel ? 1.05 : 0.8 },
+      });
+    }
+  }
+
+  // Vegetação da praça (procedural): tufos de mato instanciados + heras nas fachadas. Só enfeite, sem colisão.
+  const makeCanvasTexture = (width, height, draw) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    draw(canvas.getContext('2d'), width, height);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  };
+  const grassTexture = makeCanvasTexture(256, 256, (ctx, w, h) => {
+    for (let blade = 0; blade < 38; blade++) {
+      const baseX = 10 + streetRandom() * (w - 20);
+      const lean = (streetRandom() - 0.5) * 60;
+      const tall = h * (0.4 + streetRandom() * 0.55);
+      const green = 52 + Math.floor(streetRandom() * 50);
+      ctx.strokeStyle = `rgb(${46 + Math.floor(streetRandom() * 50)},${green},${28 + Math.floor(streetRandom() * 22)})`;
+      ctx.lineWidth = 1.1 + streetRandom() * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(baseX, h);
+      ctx.quadraticCurveTo(baseX + lean * 0.3, h - tall * 0.55, baseX + lean, h - tall);
+      ctx.stroke();
+    }
+  });
+  const grassTime = { value: 0 };
+  const grassMaterial = new THREE.MeshStandardMaterial({
+    map: grassTexture, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 1, metalness: 0, color: 0xffffff,
+  });
+  grassMaterial.onBeforeCompile = (shader) => {          // balanço leve ao vento, feito na GPU
+    shader.uniforms.uGrassTime = grassTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'uniform float uGrassTime;\nvoid main() {')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float sway = sin(uGrassTime * 1.7 + instanceMatrix[3].x * 0.8 + instanceMatrix[3].z * 1.1) * 0.09 * uv.y * uv.y;
+        transformed.x += sway;
+        transformed.z += sway * 0.6;`);
+  };
+  const tuftGeometry = new THREE.PlaneGeometry(1, 0.8);
+  tuftGeometry.translate(0, 0.4, 0);
+  const tufts = [];
+  const scatterTuft = (x, z, scale) => tufts.push({ x, z, scale, yaw: streetRandom() * Math.PI });
+  for (let cluster = 0; cluster < 56; cluster++) {                       // moitas espalhadas pela praça
+    const cx = -69 + streetRandom() * 27, cz = 31 + streetRandom() * 45;
+    for (let n = 0; n < 3 + Math.floor(streetRandom() * 3); n++) {
+      scatterTuft(cx + (streetRandom() - 0.5) * 2.6, cz + (streetRandom() - 0.5) * 2.6, 0.5 + streetRandom() * 0.85);
+    }
+  }
+  for (let n = 0; n < 56; n++) {                                         // mato crescendo rente às fachadas
+    const west = n % 2 === 0;
+    scatterTuft(west ? -63.2 - streetRandom() * 0.8 : -47.9 + streetRandom() * 0.8, 31 + streetRandom() * 45, 0.55 + streetRandom() * 0.8);
+  }
+  const grass = new THREE.InstancedMesh(tuftGeometry, grassMaterial, tufts.length * 2);
+  const tuftMatrix = new THREE.Matrix4();
+  const tuftColor = new THREE.Color();
+  tufts.forEach(({ x, z, scale, yaw }, index) => {
+    for (const cross of [0, 1]) {                                        // dois planos cruzados dão volume
+      tuftMatrix.compose(
+        new THREE.Vector3(x, 0.01, z),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw + cross * Math.PI / 2, 0)),
+        new THREE.Vector3(scale, scale * (0.85 + streetRandom() * 0.5), scale),
+      );
+      grass.setMatrixAt(index * 2 + cross, tuftMatrix);
+      grass.setColorAt(index * 2 + cross, tuftColor.setHSL(0.2 + streetRandom() * 0.09, 0.3 + streetRandom() * 0.12, 0.2 + streetRandom() * 0.12));
+    }
+  });
+  grass.receiveShadow = true;
+  grass.frustumCulled = false;
+  group.add(grass);
+  districtParts.push(grass);
+
+  const ivyTexture = makeCanvasTexture(128, 256, (ctx, w, h) => {
+    for (let strand = 0; strand < 7; strand++) {
+      const x = 14 + strand * 16 + streetRandom() * 6;
+      ctx.strokeStyle = 'rgb(38,52,28)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.bezierCurveTo(x + 6, h * 0.3, x - 8, h * 0.6, x + 4, h * (0.55 + streetRandom() * 0.4));
+      ctx.stroke();
+    }
+    for (let leaf = 0; leaf < 150; leaf++) {
+      const y = streetRandom() * h * (0.35 + streetRandom() * 0.65);
+      const x = 8 + streetRandom() * (w - 16);
+      ctx.fillStyle = `rgb(${30 + Math.floor(streetRandom() * 40)},${58 + Math.floor(streetRandom() * 60)},${22 + Math.floor(streetRandom() * 28)})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 3 + streetRandom() * 4, 2 + streetRandom() * 3, streetRandom() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  const ivyGeometry = new THREE.PlaneGeometry(2.2, 4.4);
+  ivyGeometry.translate(0, -2.2, 0);                                      // pendura de cima para baixo
+  const ivyPlacements = [                                                 // x, topo (y), z, virada (+1: face voltada para +x)
+    [-63.45, 9.5, 69.6, 1], [-63.45, 8.0, 63.0, 1], [-63.45, 11.0, 57.5, 1], [-63.45, 9.0, 50.5, 1], [-63.45, 7.5, 46.2, 1],
+    [-48.45, 11.0, 66.5, -1], [-48.45, 8.5, 62.0, -1], [-48.45, 7.0, 56.5, -1], [-48.45, 5.5, 50.5, -1], [-48.45, 10.5, 71.0, -1],
+  ];
+  const ivy = new THREE.InstancedMesh(ivyGeometry, new THREE.MeshStandardMaterial({
+    map: ivyTexture, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0,
+  }), ivyPlacements.length);
+  ivyPlacements.forEach(([x, top, z, facing], index) => {
+    tuftMatrix.compose(
+      new THREE.Vector3(x, top, z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, facing * Math.PI / 2, 0)),
+      new THREE.Vector3(1 + (index % 3) * 0.25, 0.8 + (index % 4) * 0.2, 1),
+    );
+    ivy.setMatrixAt(index, tuftMatrix);
+  });
+  group.add(ivy);
+  districtParts.push(ivy);
 
   props.push(
     { id: 'garage-ammo', pos: new THREE.Vector3(23.4, 0, GARAGE_Z - 0.9), y: 0, radius: 1.8, label: 'Pegar munição de pistola',
@@ -1315,6 +1639,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   group.add(stormLight);
   const poolCamera = new THREE.Vector3(0, 2, 30);
   let elapsed = 0;
+  const flameWorld = new THREE.Vector3();
   mergeStaticBoxes();
   group.traverse((object) => { if (object.isMesh && !object.userData.renderOnly) occluders.push(object); });
   occluders.push(...occluderProxies);
@@ -1330,6 +1655,12 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
     },
     update(timeOrDelta = 0, dt = timeOrDelta, cameraPosition = null) {
       elapsed += dt;
+      if (cameraPosition) {
+        // O bairro fica atrás de prédios: só é visível de dentro dele ou olhando pela rua transversal (faixa de z da
+        // passagem). Fora disso nem é enviado à GPU.
+        const showDistrict = cameraPosition.x < -10 || Math.abs(cameraPosition.z - CROSS.zc) < 16;
+        for (const part of districtParts) part.visible = showDistrict;
+      }
       rainMaterial.uniforms.time.value = elapsed;
       for (let drop = 0; drop < rainCount; drop++) {
         const offset = drop * 6;
@@ -1388,16 +1719,21 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
           transition();
         }
       }
+      emberMaterial.uniforms.time.value = elapsed;
+      grassTime.value = elapsed;
+      glowGround.material.opacity = 0.34 + Math.sin(elapsed * 9.1) * 0.07 + Math.sin(elapsed * 17.3) * 0.04;
       flames.forEach((flame) => {
         const phase = flame.userData.seed;
         flame.material.uniforms.time.value = elapsed;
+        if (cameraPosition) {          // billboard só em Y (o grupo do fogo também está girado)
+          flame.getWorldPosition(flameWorld);
+          flame.rotation.y = Math.atan2(cameraPosition.x - flameWorld.x, cameraPosition.z - flameWorld.z) - fire.rotation.y;
+        }
         flame.scale.set(
-          0.78 + Math.sin(elapsed * 12.5 + phase) * 0.22,
-          0.82 + Math.sin(elapsed * 7.4 + phase * 1.3) * 0.24,
+          0.92 + Math.sin(elapsed * 9.0 + phase) * 0.09,
+          0.9 + Math.sin(elapsed * 5.3 + phase * 1.3) * 0.15 + Math.sin(elapsed * 13.7 + phase) * 0.05,
           1,
         );
-        flame.rotation.z = Math.sin(elapsed * 4.1 + phase) * 0.14;
-        flame.position.x = flame.userData.originX + Math.sin(elapsed * 5.8 + phase) * 0.045;
       });
       fireLight.intensity = 36 + Math.sin(elapsed * 8.2) * 11
         + Math.sin(elapsed * 15.7) * 5.2 + Math.sin(elapsed * 24.1) * 2.4;
