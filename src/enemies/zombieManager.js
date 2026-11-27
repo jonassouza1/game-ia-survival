@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadZombieModel, createZombieActor, raycastActor, ZONE_DAMAGE } from './zombieRig.js';
+import { loadZombieModel, createZombieActor, raycastActor, ZONE_DAMAGE, setZombieTextureLimit } from './zombieRig.js';
 import { MODELS, LOCATIONS } from './roster.js';
 
 const { clamp, lerp } = THREE.MathUtils;
@@ -115,6 +115,7 @@ function findPath(col, sx, sz, gx, gz, y, radius = 0.36) {
 }
 
 export function createEnemies({ scene, locations, getPlayer, getActiveCollisions, audio, onPlayerDamage, quality }) {
+  setZombieTextureLimit(quality?.name === 'low' ? 512 : 1024);
   const zombies = [];
   const groups = [];
   const victims = [];

@@ -1,18 +1,21 @@
 import * as THREE from 'three';
+import { PBR_FORMATS } from './pbrFormats.js';
 
 /**
  * Biblioteca de materiais PBR baseada nos assets CC0 da Poly Haven.
  *
- * Cada conjunto em /textures/pbr/<id>/ traz três mapas de 1k:
- *   diffuse.jpg  — albedo sRGB
- *   normal.jpg   — normal map de espaço tangente
- *   arm.jpg      — R = oclusão, G = rugosidade, B = metalicidade (mapa empacotado)
+ * Cada conjunto em /textures/pbr/<id>/ traz três mapas de 1k (WebP; JPG nos poucos mapas em que o WebP perderia detalhe,
+ * ver pbrFormats.js) e uma variante <mapa>_512.webp usada pelo preset BAIXO:
+ *   diffuse  — albedo sRGB
+ *   normal   — normal map de espaço tangente
+ *   arm      — R = oclusão, G = rugosidade, B = metalicidade (mapa empacotado)
  *
  * O jogo continua usando UV de mundo (ver Builder), então a textura repete pelo
  * cenário em vez de esticar uma única imagem por parede inteira.
  */
 
 let anisotropy = 4;
+let lowRes = false;   // preset BAIXO: variantes de 512 px (1/4 da memória de vídeo; a 0,7× de resolução ninguém nota)
 const loader = new THREE.TextureLoader();
 const sets = new Map();
 
@@ -31,8 +34,9 @@ const FALLBACK = {
   arm: fallbackCanvas('#ffc800'),
 };
 
-export function initPBR(renderer) {
-  anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+export function initPBR(renderer, quality) {
+  anisotropy = Math.min(quality?.name === 'low' ? 4 : 8, renderer.capabilities.getMaxAnisotropy());
+  lowRes = quality?.name === 'low';
 }
 
 function prepare(texture, colorSpace) {
@@ -70,9 +74,10 @@ function getTextureSet(id) {
   let set = sets.get(id);
   if (set) return set;
   const base = `/textures/pbr/${id}`;
-  const diffuse = loadMap(`${base}/diffuse.jpg`, 'diffuse');
-  const normal = loadMap(`${base}/normal.jpg`, 'normal');
-  const arm = loadMap(`${base}/arm.jpg`, 'arm');
+  const url = (kind) => (lowRes ? `${base}/${kind}_512.webp` : `${base}/${kind}.${PBR_FORMATS[id]?.[kind] ?? 'webp'}`);
+  const diffuse = loadMap(url('diffuse'), 'diffuse');
+  const normal = loadMap(url('normal'), 'normal');
+  const arm = loadMap(url('arm'), 'arm');
   set = {
     id, diffuse, normal, arm,
     ready: Promise.all([

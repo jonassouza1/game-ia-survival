@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../render/loaders.js';
 import { retargetMixamoClip } from './retarget.js';
 import { createGait } from './locomotion.js';
 import { createSidearm, SIDEARM } from './sidearm.js';
@@ -31,7 +31,7 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
   model.skinned = skinned;
   model.root = skinned.root;
 
-  new GLTFLoader().load('/models/character/swat.glb', (gltf) => {
+  createGLTFLoader().load('/models/character/swat.glb', (gltf) => {
     const character = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(character);
     const size = bounds.getSize(new THREE.Vector3());
@@ -81,7 +81,7 @@ export function createPlayer({ scene, world, camera, dom, audio, inventory, qual
     // de ossos, outra escala e olhando para o lado oposto). Ver retarget.js: o
     // movimento é convertido osso a osso para o esqueleto do SWAT, incluindo a
     // rotação e o deslocamento do quadril (Hips).
-    new GLTFLoader().load('/models/character/Soldier.glb', (soldier) => {
+    createGLTFLoader().load('/models/character/Soldier.glb', (soldier) => {
       const locomotion = {};
       for (const name of ['Walk', 'Run']) {
         const source = soldier.animations.find((clip) => clip.name === name);

@@ -3,6 +3,7 @@
  * Baixa os assets CC0 da Poly Haven usados pelo RPD Survival.
  *
  * Uso:
+ *   (baixa os ORIGINAIS; depois rode os scripts optimize:* — veja o README)
  *   node tools/fetch-assets.mjs            # baixa tudo que ainda não existe
  *   node tools/fetch-assets.mjs --force    # rebaixa tudo
  *   node tools/fetch-assets.mjs textures   # só uma categoria

@@ -15,6 +15,7 @@ import { createEnvironment } from './render/environment.js';
 import { createStorm } from './render/storm.js';
 import { createPostFX } from './render/postfx.js';
 import { resolveQuality, applyQuality, configureGroupShadows } from './render/quality.js';
+import { setModelTextureLimit } from './render/loaders.js';
 import { isTouchDevice } from './input/device.js';
 import { createTouchControls, getStoredSensitivity } from './input/touchControls.js';
 
@@ -28,13 +29,14 @@ const camera = new THREE.PerspectiveCamera(58, container.clientWidth / container
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 const quality = resolveQuality(renderer);
 applyQuality(renderer, quality);
+setModelTextureLimit(quality.name === 'low' ? 512 : 0);   // antes de qualquer GLB ser carregado
 renderer.shadowMap.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 container.prepend(renderer.domElement);
 renderer.setSize(container.clientWidth, container.clientHeight);
-initPBR(renderer);
+initPBR(renderer, quality);
 
 const hallGroup = new THREE.Group();
 const streetGroup = new THREE.Group();
@@ -336,7 +338,9 @@ window.addEventListener('resize', () => {
 
 // Gancho de depuração (console: __rpd.player.state)
 window.__rpd = {
-  THREE, scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality, storm,
+  // THREE só em desenvolvimento: expor o namespace inteiro impede o tree-shaking e infla o bundle de produção.
+  ...(import.meta.env.DEV ? { THREE } : {}),
+  scene, camera, player, world, renderer, audio, inventory, postfx, environment, switchScene, quality, storm,
   activeCollisions, hallWorld, streetWorld, hospitalWorld, enemies, health, damagePlayer,
   touchControls, isTouchDevice,
   step: (dt = 1 / 60) => frame(dt),

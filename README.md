@@ -125,9 +125,9 @@ Detalhes úteis:
 Os assets CC0 baixados ficam em:
 
 ```
-public/textures/pbr/<id>/{diffuse,normal,arm}.jpg
+public/textures/pbr/<id>/{diffuse,normal,arm}.webp   (+ <mapa>_512.webp para o preset Baixo; alguns normais ficam em .jpg)
 public/hdri/<id>_1k.hdr
-public/models/polyhaven/<id>/<id>.gltf
+public/models/polyhaven/<id>/<id>.glb
 public/models/character/{swat,Soldier}.glb
 ```
 
@@ -283,3 +283,20 @@ Se a bala passa pelo braço e continua para o tronco, conta como peito/abdômen.
 Veja o cabeçalho de `roster.js`: baixe um personagem zumbi no [mixamo.com](https://www.mixamo.com) como **FBX Binary, T-pose**,
 coloque em `public/models/zombies/` (com as texturas na mesma pasta) e aponte em `MODELS`. Não precisa baixar animações:
 as de `public/animations/zombie/` são retargetadas automaticamente para qualquer esqueleto Mixamo.
+
+
+## Otimização de assets e desempenho
+
+Os assets em `public/` já estão otimizados (≈ 180 MB → ≈ 70 MB). Os scripts que fazem isso ficam em `tools/` e
+trabalham a partir dos **arquivos originais** (guarde-os fora do projeto):
+
+| Script | O que faz |
+| --- | --- |
+| `npm run optimize:textures` | Texturas PBR → WebP (menor qualidade que fique ≥ 40 dB; normais ruidosos ficam em JPG) + variante 512 px para o preset **Baixo**. Gera `src/render/pbrFormats.js`. |
+| `npm run optimize:zombies` | Troca as texturas PNG 2048² embutidas nos FBX dos zumbis por WebP 1024 (e o *specular*, que o material nunca usa, por 4×4 px). Geometria/esqueleto intactos. |
+| `ORIG=<pasta>/models npm run optimize:models` | GLB/glTF → texturas WebP, simplificação com erro ≤ 0,1% do tamanho da peça, quantização + compressão meshopt; props Poly Haven viram `.glb` único. |
+| `ORIG=<pasta>/models npm run verify:models` | Carrega originais e otimizados com o `GLTFLoader` e compara caixa, malhas, ossos e clipes. |
+
+Os GLB comprimidos precisam do `MeshoptDecoder`: use sempre `createGLTFLoader()` (`src/render/loaders.js`), nunca `new GLTFLoader()`.
+No preset **Baixo**, texturas de GLB (via `loaders.js`), de zumbis e PBR são limitadas a 512 px.
+Depois de `npm run assets` (que baixa os originais), rode os scripts acima para reaplicar a otimização.

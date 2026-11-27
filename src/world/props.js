@@ -1,19 +1,19 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../render/loaders.js';
 
 /**
  * Carrega os props CC0 da Poly Haven, normaliza a escala em metros e clona
  * instâncias compartilhando geometria/materiais. Os assets ficam em
- * /models/polyhaven/<id>/<id>.gltf (baixados por tools/fetch-assets.mjs).
+ * /models/polyhaven/<id>/<id>.glb (otimizados por tools/optimize-models.mjs).
  */
 export function createProps({ parent, collisions, anisotropy = 4 }) {
-  const loader = new GLTFLoader();
+  const loader = createGLTFLoader();
   const cache = new Map();
 
   async function load(id) {
     if (cache.has(id)) return cache.get(id);
     // Ids simples vêm da Poly Haven; caminhos que começam com '/' são arquivos GLB/GLTF próprios (ex.: /models/hospital/bed.glb).
-    const url = id.startsWith('/') ? id : `/models/polyhaven/${id}/${id}.gltf`;
+    const url = id.startsWith('/') ? id : `/models/polyhaven/${id}/${id}.glb`;
     const promise = loader.loadAsync(url).then(({ scene }) => {
       scene.traverse((object) => {
         if (!object.isMesh) return;

@@ -1,6 +1,6 @@
 import cityWalls from './data/city_block.walls.json';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../render/loaders.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildHospitalFacade } from './hospitalExterior.js';
 import { placeHospitalBuilding } from './hospitalBuilding.js';
@@ -51,7 +51,6 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   // Entorno do hospital: as alas do prédio vão até x = ±14,23 e a fachada começa em z ≈ 69,5. O último prédio
   // lateral (z = 71) e o beco seguinte (z = 78) ficavam dentro delas. Agora o prédio vira um "anexo" que recua e
   // encosta na lateral do hospital, e o beco que sobrava dentro da ala deixa de existir.
-  const HOSPITAL_FLANK_X = 14.75;     // face interna do anexo (a ala do hospital termina em ±14,23)
   const HOSPITAL_ANNEX_Z = 66.05;     // face frontal do anexo (no layout antigo, alinhada à parede do beco de z = 64)
   // Becos que sobraram entre os prédios novos (centro em z, por lado). Cada um tem 3,9 m de largura.
   const ALLEY_Z = { '-1': [3.1, 22.2, 63.2], '1': [2.3, 30.7] };
@@ -172,7 +171,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
   }
   const occluders = [];
   const streetLightPool = new LightPool(group, { count: 8 });
-  const modelLoader = new GLTFLoader();
+  const modelLoader = createGLTFLoader();
   const streetDoorLeaves = [];
   let streetDoorTarget = 0;
   let pendingDoorTransition = null;
@@ -812,7 +811,7 @@ export function buildCityStreet(group, { hospitalExterior = null, hospitalDoor =
       }
     });
   };
-  new GLTFLoader().load('/models/covered_car/covered_car_1k.gltf', (gltf) => {
+  createGLTFLoader().load('/models/covered_car/covered_car_1k.glb', (gltf) => {
     const wreck = gltf.scene;
     wreck.position.set(-7.3, 0.02, 50);
     wreck.rotation.y = 0.35;

@@ -137,15 +137,22 @@ export function createPostFX(renderer, scene, camera, { width, height, quality }
 
   // Objetos transparentes/efeitos (fogo, fumaça, chuva) não devem virar
   // oclusores no depth/normal do GTAO.
+  // A lista de objetos `noAO` fica em cache (varrer a cena inteira a cada quadro custa CPU à toa) e é refeita
+  // a cada ~2 s para pegar objetos criados depois.
   const gtaoRender = gtao.render.bind(gtao);
+  let noAOList = [];
+  let noAOAge = Infinity;
+  const refreshNoAO = () => {
+    noAOList = [];
+    scene.traverse((object) => { if (object.userData.noAO) noAOList.push(object); });
+    noAOAge = 0;
+  };
   gtao.render = (targetRenderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+    if (++noAOAge > 120) refreshNoAO();
     const hidden = [];
-    scene.traverse((object) => {
-      if (object.userData.noAO && object.visible) {
-        object.visible = false;
-        hidden.push(object);
-      }
-    });
+    for (const object of noAOList) {
+      if (object.visible) { object.visible = false; hidden.push(object); }
+    }
     gtaoRender(targetRenderer, writeBuffer, readBuffer, deltaTime, maskActive);
     for (const object of hidden) object.visible = true;
   };

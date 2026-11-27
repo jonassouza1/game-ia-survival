@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../render/loaders.js';
 import { Builder } from './builder.js';
 import { createBodyKit } from './hospitalBodies.js';
 import { createProps } from './props.js';
@@ -692,7 +692,7 @@ export function buildHospital(scene, assets = {}) {
   const entranceDoor = { target: 0, leaves: [] };
   const leafMeshes = [];
   let occluderList = null;
-  const doorLoader = new GLTFLoader();
+  const doorLoader = createGLTFLoader();
   for (const side of [-1, 1]) {
     const hinge = new THREE.Group();
     hinge.position.set(side * 1.2, 0, z1);

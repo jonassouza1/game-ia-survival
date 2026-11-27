@@ -89,87 +89,87 @@
   "models": [
     {
       "id": "GreenChair_01",
-      "path": "/models/polyhaven/GreenChair_01/GreenChair_01.gltf"
+      "path": "/models/polyhaven/GreenChair_01/GreenChair_01.glb"
     },
     {
       "id": "painted_wooden_bench",
-      "path": "/models/polyhaven/painted_wooden_bench/painted_wooden_bench.gltf"
+      "path": "/models/polyhaven/painted_wooden_bench/painted_wooden_bench.glb"
     },
     {
       "id": "vintage_grandfather_clock_01",
-      "path": "/models/polyhaven/vintage_grandfather_clock_01/vintage_grandfather_clock_01.gltf"
+      "path": "/models/polyhaven/vintage_grandfather_clock_01/vintage_grandfather_clock_01.glb"
     },
     {
       "id": "wooden_bookshelf_worn",
-      "path": "/models/polyhaven/wooden_bookshelf_worn/wooden_bookshelf_worn.gltf"
+      "path": "/models/polyhaven/wooden_bookshelf_worn/wooden_bookshelf_worn.glb"
     },
     {
       "id": "book_encyclopedia_set_01",
-      "path": "/models/polyhaven/book_encyclopedia_set_01/book_encyclopedia_set_01.gltf"
+      "path": "/models/polyhaven/book_encyclopedia_set_01/book_encyclopedia_set_01.glb"
     },
     {
       "id": "marble_bust_01",
-      "path": "/models/polyhaven/marble_bust_01/marble_bust_01.gltf"
+      "path": "/models/polyhaven/marble_bust_01/marble_bust_01.glb"
     },
     {
       "id": "potted_plant_02",
-      "path": "/models/polyhaven/potted_plant_02/potted_plant_02.gltf"
+      "path": "/models/polyhaven/potted_plant_02/potted_plant_02.glb"
     },
     {
       "id": "wooden_crate_01",
-      "path": "/models/polyhaven/wooden_crate_01/wooden_crate_01.gltf"
+      "path": "/models/polyhaven/wooden_crate_01/wooden_crate_01.glb"
     },
     {
       "id": "ammo_box",
-      "path": "/models/polyhaven/ammo_box/ammo_box.gltf"
+      "path": "/models/polyhaven/ammo_box/ammo_box.glb"
     },
     {
       "id": "mantel_clock_01",
-      "path": "/models/polyhaven/mantel_clock_01/mantel_clock_01.gltf"
+      "path": "/models/polyhaven/mantel_clock_01/mantel_clock_01.glb"
     },
     {
       "id": "desk_lamp_arm_01",
-      "path": "/models/polyhaven/desk_lamp_arm_01/desk_lamp_arm_01.gltf"
+      "path": "/models/polyhaven/desk_lamp_arm_01/desk_lamp_arm_01.glb"
     },
     {
       "id": "SchoolDesk_01",
-      "path": "/models/polyhaven/SchoolDesk_01/SchoolDesk_01.gltf"
+      "path": "/models/polyhaven/SchoolDesk_01/SchoolDesk_01.glb"
     },
     {
       "id": "WoodenTable_02",
-      "path": "/models/polyhaven/WoodenTable_02/WoodenTable_02.gltf"
+      "path": "/models/polyhaven/WoodenTable_02/WoodenTable_02.glb"
     },
     {
       "id": "vintage_oil_lamp",
-      "path": "/models/polyhaven/vintage_oil_lamp/vintage_oil_lamp.gltf"
+      "path": "/models/polyhaven/vintage_oil_lamp/vintage_oil_lamp.glb"
     },
     {
       "id": "vintage_telephone_wall_clock",
-      "path": "/models/polyhaven/vintage_telephone_wall_clock/vintage_telephone_wall_clock.gltf"
+      "path": "/models/polyhaven/vintage_telephone_wall_clock/vintage_telephone_wall_clock.glb"
     },
     {
       "id": "folding_wooden_stool",
-      "path": "/models/polyhaven/folding_wooden_stool/folding_wooden_stool.gltf"
+      "path": "/models/polyhaven/folding_wooden_stool/folding_wooden_stool.glb"
     },
     {
       "id": "fire_hydrant",
-      "path": "/models/polyhaven/fire_hydrant/fire_hydrant.gltf"
+      "path": "/models/polyhaven/fire_hydrant/fire_hydrant.glb"
     },
     {
       "id": "metal_trash_can",
-      "path": "/models/polyhaven/metal_trash_can/metal_trash_can.gltf"
+      "path": "/models/polyhaven/metal_trash_can/metal_trash_can.glb"
     },
     {
       "id": "trashbag",
-      "path": "/models/polyhaven/trashbag/trashbag.gltf"
+      "path": "/models/polyhaven/trashbag/trashbag.glb"
     },
     {
       "id": "korean_public_payphone_01",
-      "path": "/models/polyhaven/korean_public_payphone_01/korean_public_payphone_01.gltf"
+      "path": "/models/polyhaven/korean_public_payphone_01/korean_public_payphone_01.glb"
     },
     {
       "id": "Barrel_01",
-      "path": "/models/polyhaven/Barrel_01/Barrel_01.gltf"
+      "path": "/models/polyhaven/Barrel_01/Barrel_01.glb"
     }
   ],
   "characters": [

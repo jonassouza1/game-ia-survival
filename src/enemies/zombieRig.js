@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../render/loaders.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { retargetMixamoClip } from '../player/retarget.js';
@@ -15,15 +15,17 @@ const { clamp } = THREE.MathUtils;
 //    cada personagem; modelos em cm (FBX) são convertidos para metros no carregamento.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const loader = new GLTFLoader();
+const loader = createGLTFLoader();
 const gltfCache = new Map();
 
 // FBX do Mixamo referencia as texturas (.png) por nome de arquivo, na mesma pasta do .fbx.
 // Esperamos TODAS as texturas terminarem de carregar; as que não existirem são descartadas e o
 // material cai numa cor lisa (em vez de ficar PRETO) — e avisamos no console quais faltam.
 const MISSING_TEXTURE_TINT = 0x8a9478;
-// Os FBX trazem texturas 2048×2048 embutidas; reduzimos para economizar memória de vídeo (placas integradas).
-const MAX_TEXTURE_SIZE = 1024;
+// Os FBX já trazem texturas de 1024 px (tools/optimize-zombie-fbx.mjs). No preset BAIXO reduzimos para 512
+// no carregamento (1/4 da memória de vídeo; os zumbis ocupam poucos pixels a 0,7× de resolução).
+let MAX_TEXTURE_SIZE = 1024;
+export function setZombieTextureLimit(size) { MAX_TEXTURE_SIZE = size; }
 function shrinkTexture(tex) {
   const img = tex?.image;
   if (!img || !img.width || Math.max(img.width, img.height) <= MAX_TEXTURE_SIZE || typeof document === 'undefined') return;
